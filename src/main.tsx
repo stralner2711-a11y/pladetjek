@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
-  Camera, Check, Clock3, Download, ExternalLink, Flashlight, Gauge, Menu, Play,
-  History, MapPin, RefreshCw, ScanLine, Search, ShieldCheck, TriangleAlert, UserRound,
-  UsersRound, X,
+  Camera, Check, Clock3, Download, ExternalLink, Flag, Flashlight, FlaskConical,
+  Focus, Gauge, History, MapPin, Menu, Play, RefreshCw, ScanLine, Search, ShieldCheck,
+  Trash2, TriangleAlert, UserRound, UsersRound, X, ZoomIn,
 } from "lucide-react";
 import { AccountScreen } from "./AccountScreen";
 import { AdminUsersScreen } from "./AdminUsersScreen";
@@ -24,7 +24,9 @@ import {
 } from "./update-system";
 import {
   advancePlateEvidence,
+  calculateFocusPoint,
   calculateCoverCrop,
+  clampCameraZoom,
   estimateImageLuminance,
   findBestPlateCandidate,
   plateCaptureFilter,
@@ -34,6 +36,7 @@ import {
 import {
   createSharedAlert,
   matchSharedAlert,
+  reportSharedAlert,
   sharedAlertsAreConfigured,
   type SharedVehicleAlert,
 } from "./shared-alerts";
@@ -66,15 +69,27 @@ type AlertScanResult = {
   plate: string;
   capturedAt: number;
 };
+type PendingPlateConfirmation = {
+  plate: string;
+  purpose: "lookup" | "alert";
+};
 
 type ExtendedCameraCapabilities = MediaTrackCapabilities & {
   focusMode?: string[];
+  pointsOfInterest?: boolean;
   torch?: boolean;
+  zoom?: {
+    min: number;
+    max: number;
+    step: number;
+  };
 };
 
 type ExtendedCameraConstraintSet = MediaTrackConstraintSet & {
   focusMode?: string;
+  pointsOfInterest?: Array<{ x: number; y: number }>;
   torch?: boolean;
+  zoom?: number;
 };
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -85,6 +100,38 @@ const UPDATE_MANIFEST_URL = String(
   import.meta.env.VITE_UPDATE_MANIFEST_URL ?? DEFAULT_MANIFEST_URL,
 );
 const DISMISSED_UPDATE_KEY = "pladetjek:dismissed-update";
+const HISTORY_KEY = "pladetjek:scan-history:v1";
+const TEST_MODE_KEY = "pladetjek:test-mode";
+const TEST_PLATE = "TT00000";
+
+function loadPrivateHistory(): RegistryCheck[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]") as RegistryCheck[];
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((item) => (
+      typeof item?.plate === "string"
+      && typeof item?.checkedAt === "string"
+      && (item.alert === null || typeof item.alert?.description === "string")
+    )).slice(0, 50);
+  } catch {
+    return [];
+  }
+}
+
+function localTestAlert(): VehicleAlert {
+  const now = new Date().toISOString();
+  return {
+    id: "local-test-alert",
+    plate: TEST_PLATE,
+    description: "Lokalt testmatch – ingen data eller notifikation er sendt.",
+    createdAt: now,
+    expiresAt: now,
+    reporterName: "Testtilstand",
+    observationCount: 3,
+    distinctReporterCount: 2,
+    lastSeenAt: now,
+  };
+}
 
 type NativeUpdater = {
   getCurrentVersion: () => Promise<{ versionName: string; versionCode: number }>;
@@ -197,10 +244,22 @@ function App() {
   const [lowLightDetected, setLowLightDetected] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [zoomSupported, setZoomSupported] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [zoomMinimum, setZoomMinimum] = useState(1);
+  const [zoomMaximum, setZoomMaximum] = useState(1);
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
   const [alertScanActive, setAlertScanActive] = useState(false);
   const [alertScanResult, setAlertScanResult] = useState<AlertScanResult | null>(null);
+  const [pendingPlateConfirmation, setPendingPlateConfirmation] =
+    useState<PendingPlateConfirmation | null>(null);
   const [matchedAlert, setMatchedAlert] = useState<VehicleAlert | null>(null);
-  const [history, setHistory] = useState<RegistryCheck[]>([]);
+  const [history, setHistory] = useState<RegistryCheck[]>(loadPrivateHistory);
+  const [testMode, setTestMode] = useState(() => localStorage.getItem(TEST_MODE_KEY) === "true");
+  const [reportAlert, setReportAlert] = useState<VehicleAlert | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(
     () => window.matchMedia("(display-mode: standalone)").matches,
@@ -231,6 +290,11 @@ function App() {
     setLowLightDetected(false);
     setTorchSupported(false);
     setTorchOn(false);
+    setZoomSupported(false);
+    setZoom(1);
+    setZoomMinimum(1);
+    setZoomMaximum(1);
+    setFocusPoint(null);
     setScannerStatus("Eksempelvisning");
   }
 
@@ -298,6 +362,14 @@ function App() {
   }, []);
 
   useEffect(() => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 50)));
+  }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem(TEST_MODE_KEY, String(testMode));
+  }, [testMode]);
+
+  useEffect(() => {
     let removeNearbyListeners: () => void = () => undefined;
     let cancelled = false;
 
@@ -310,6 +382,9 @@ function App() {
         createdAt: notification.observedAt,
         expiresAt: new Date(Date.parse(notification.observedAt) + 60 * 60_000).toISOString(),
         reporterName: "Fælles match",
+        observationCount: 1,
+        distinctReporterCount: 1,
+        lastSeenAt: notification.observedAt,
         notificationEventId: notification.eventId,
         observedAt: notification.observedAt,
         nearbyDistanceMeters: notification.distanceMeters,
@@ -460,43 +535,17 @@ function App() {
           const formatted = displayPlate(candidate.plate);
           setPlate(formatted);
           setScannerStatus(`Nummerplade bekræftet · ${formatted}`);
-
-          if (alertScanActive) {
-            setAlertScanResult({ plate: formatted, capturedAt: Date.now() });
-            navigator.vibrate?.(180);
-            streamRef.current?.getTracks().forEach((track) => track.stop());
-            streamRef.current = null;
-            setCameraOn(false);
-            setAlertScanActive(false);
-            window.setTimeout(() => {
-              document.getElementById("tilfoej-advarsel")?.scrollIntoView({ behavior: "smooth" });
-              document.getElementById("alert-description")?.focus();
-            }, 250);
-            return;
-          }
-
           const now = Date.now();
           const recent = lastMatchCheck.current;
-          if (recent.plate !== candidate.plate || now - recent.checkedAt > 15_000) {
-            lastMatchCheck.current = { plate: candidate.plate, checkedAt: now };
-            const coordinates = await getNearbyMatchCoordinates();
-            const alert = await matchVehicleAlert(candidate.plate, coordinates);
-            if (cancelled) return;
-            const check = {
-              plate: candidate.plate,
-              checkedAt: new Date(now).toISOString(),
-              alert,
-            };
-            setResult(check);
-            setHistory((old) => [
-              check,
-              ...old.filter((item) => item.plate !== check.plate),
-            ].slice(0, 5));
-            if (alert && !cancelled) {
-              setMatchedAlert(alert);
-              navigator.vibrate?.([350, 120, 350, 120, 500]);
-            }
-          }
+          if (recent.plate === candidate.plate && now - recent.checkedAt <= 15_000) return;
+          lastMatchCheck.current = { plate: candidate.plate, checkedAt: now };
+          setPendingPlateConfirmation({
+            plate: formatted,
+            purpose: alertScanActive ? "alert" : "lookup",
+          });
+          navigator.vibrate?.(180);
+          stopCamera();
+          return;
         } else if (!cancelled) {
           setScannerStatus(
             evidenceUpdate.evidence
@@ -609,6 +658,25 @@ function App() {
       if (videoTrack) {
         const capabilities = videoTrack.getCapabilities() as ExtendedCameraCapabilities;
         setTorchSupported(capabilities.torch === true);
+        if (
+          capabilities.zoom
+          && Number.isFinite(capabilities.zoom.min)
+          && Number.isFinite(capabilities.zoom.max)
+          && capabilities.zoom.max > capabilities.zoom.min
+        ) {
+          const settings = videoTrack.getSettings() as MediaTrackSettings & { zoom?: number };
+          const currentZoom = clampCameraZoom(
+            settings.zoom ?? capabilities.zoom.min,
+            capabilities.zoom.min,
+            capabilities.zoom.max,
+          );
+          setZoomSupported(true);
+          setZoomMinimum(capabilities.zoom.min);
+          setZoomMaximum(capabilities.zoom.max);
+          setZoom(currentZoom);
+        } else {
+          setZoomSupported(false);
+        }
         if (capabilities.focusMode?.includes("continuous")) {
           await videoTrack.applyConstraints({
             advanced: [{
@@ -648,6 +716,53 @@ function App() {
     }
   }
 
+  async function applyZoom(nextValue: number) {
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+    if (!videoTrack || !zoomSupported) return;
+    const next = clampCameraZoom(nextValue, zoomMinimum, zoomMaximum);
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{ zoom: next } as ExtendedCameraConstraintSet],
+      });
+      setZoom(next);
+      setCameraError("");
+    } catch {
+      setCameraError("Telefonens kamerazoom kunne ikke ændres.");
+    }
+  }
+
+  async function focusCamera(event: React.PointerEvent<HTMLDivElement>) {
+    if (!cameraOn) return;
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+    if (!videoTrack) return;
+    const point = calculateFocusPoint(
+      event.clientX,
+      event.clientY,
+      event.currentTarget.getBoundingClientRect(),
+    );
+    setFocusPoint(point);
+    window.setTimeout(() => setFocusPoint(null), 900);
+
+    const capabilities = videoTrack.getCapabilities() as ExtendedCameraCapabilities;
+    const focusMode = capabilities.focusMode?.includes("single-shot")
+      ? "single-shot"
+      : capabilities.focusMode?.includes("continuous")
+        ? "continuous"
+        : undefined;
+    if (!focusMode && !capabilities.pointsOfInterest) return;
+
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{
+          ...(focusMode ? { focusMode } : {}),
+          ...(capabilities.pointsOfInterest ? { pointsOfInterest: [point] } : {}),
+        } as ExtendedCameraConstraintSet],
+      });
+    } catch {
+      // Fokusmarkeringen giver stadig præcis visuel feedback på telefoner uden manuel fokus.
+    }
+  }
+
   async function toggleCamera() {
     if (cameraOn) {
       stopCamera();
@@ -664,23 +779,34 @@ function App() {
     }
   }
 
-  async function runRegistryCheck() {
-    if (!valid || loading) return;
+  function addHistory(check: RegistryCheck) {
+    setHistory((current) => [check, ...current].slice(0, 50));
+  }
+
+  async function runRegistryCheckForPlate(rawPlate: string, viaCamera: boolean) {
+    const normalized = normalizePlate(rawPlate);
+    if (!/^[A-ZÆØÅ]{2}\d{5}$/.test(normalized) || loading) return;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const alert = await matchVehicleAlert(plate, null);
+      const alert = testMode && normalized === TEST_PLATE
+        ? localTestAlert()
+        : await matchVehicleAlert(
+            normalized,
+            viaCamera ? await getNearbyMatchCoordinates() : null,
+          );
       const check = {
-        plate: normalizePlate(plate),
+        plate: normalized,
         checkedAt: new Date().toISOString(),
         alert,
       };
       setResult(check);
-      setHistory((old) => [
-        check,
-        ...old.filter((item) => item.plate !== check.plate),
-      ].slice(0, 5));
+      addHistory(check);
+      if (alert && viaCamera) {
+        setMatchedAlert(alert);
+        navigator.vibrate?.([350, 120, 350, 120, 500]);
+      }
     } catch (caught) {
       setError({
         code: "REGISTRY_CHECK_FAILED",
@@ -690,6 +816,66 @@ function App() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runRegistryCheck() {
+    if (!valid) return;
+    await runRegistryCheckForPlate(plate, false);
+  }
+
+  async function confirmScannedPlate() {
+    if (!pendingPlateConfirmation) return;
+    const confirmedPlate = normalizePlate(pendingPlateConfirmation.plate);
+    if (!/^[A-ZÆØÅ]{2}\d{5}$/.test(confirmedPlate)) return;
+    const purpose = pendingPlateConfirmation.purpose;
+    setPendingPlateConfirmation(null);
+    setPlate(displayPlate(confirmedPlate));
+    if (purpose === "alert") {
+      setAlertScanResult({ plate: confirmedPlate, capturedAt: Date.now() });
+      window.setTimeout(() => {
+        document.getElementById("tilfoej-advarsel")?.scrollIntoView({ behavior: "smooth" });
+        document.getElementById("alert-description")?.focus();
+      }, 250);
+      return;
+    }
+    await runRegistryCheckForPlate(confirmedPlate, true);
+  }
+
+  function runLocalTestMatch() {
+    setTestMode(true);
+    const formatted = displayPlate(TEST_PLATE);
+    const check = {
+      plate: TEST_PLATE,
+      checkedAt: new Date().toISOString(),
+      alert: localTestAlert(),
+    };
+    setPlate(formatted);
+    setError(null);
+    setResult(check);
+    addHistory(check);
+    setMatchedAlert(check.alert);
+    navigator.vibrate?.([180, 80, 180]);
+  }
+
+  function openReport(alert: VehicleAlert) {
+    setReportAlert(alert);
+    setReportReason("");
+    setReportMessage("");
+  }
+
+  async function submitReport() {
+    const reason = reportReason.replace(/\s+/g, " ").trim();
+    if (!reportAlert || reason.length < 10 || reporting || reportAlert.id === "local-test-alert") return;
+    setReporting(true);
+    setReportMessage("");
+    try {
+      await reportSharedAlert(reportAlert.id, reason);
+      setReportMessage("Tak. Rapporten er sendt til administratorernes moderationskø.");
+    } catch (caught) {
+      setReportMessage(caught instanceof Error ? caught.message : "Rapporten kunne ikke sendes.");
+    } finally {
+      setReporting(false);
     }
   }
 
@@ -757,7 +943,10 @@ function App() {
               <span><i /> {alertScanActive ? "Scan til advarsel" : "Live scanning"}</span>
               <button className="icon-button" aria-label="Kamera" onClick={toggleCamera}>{cameraOn ? <X /> : <Camera />}</button>
             </div>
-            <div className="camera-stage">
+            <div
+              className={`camera-stage ${cameraOn ? "focus-enabled" : ""}`}
+              onPointerDown={(event) => void focusCamera(event)}
+            >
               <img src="/demo-road.png" alt="Eksempel på kameravisning med en bil" className={cameraOn ? "hidden" : ""} />
               <video ref={videoRef} autoPlay playsInline muted className={cameraOn ? "" : "hidden"} />
               {alertScanActive &&
@@ -765,14 +954,45 @@ function App() {
                   <TriangleAlert /> Nummerpladen overføres til advarslen efter bekræftelse
                 </div>}
               {cameraOn && lowLightDetected && !torchOn &&
-                <div className="low-light-hint">
-                  <Flashlight /> Mørkt billede · tænd lygten
-                </div>}
+                (torchSupported
+                  ? <button
+                      type="button"
+                      className="low-light-hint"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void toggleTorch();
+                      }}
+                    >
+                      <Flashlight /> Mørkt billede · tænd lygten
+                    </button>
+                  : <div className="low-light-hint low-light-static">
+                      <Flashlight /> Mørkt billede · brug mere lys
+                    </div>)}
+              {focusPoint &&
+                <span
+                  className="focus-ring"
+                  style={{ left: `${focusPoint.x * 100}%`, top: `${focusPoint.y * 100}%` }}
+                ><Focus /></span>}
               <div ref={scanFrameRef} className="scan-frame">
                 <span /><span /><span /><span />
               </div>
               <div className="recognized"><ScanLine /> {displayPlate(plate) || "AFVENTER PLADE"}</div>
             </div>
+            {cameraOn && zoomSupported &&
+              <div className="camera-zoom">
+                <ZoomIn />
+                <label htmlFor="camera-zoom">Zoom {zoom.toFixed(1)}×</label>
+                <input
+                  id="camera-zoom"
+                  type="range"
+                  min={zoomMinimum}
+                  max={zoomMaximum}
+                  step={0.1}
+                  value={zoom}
+                  onChange={(event) => void applyZoom(Number(event.target.value))}
+                />
+              </div>}
             <div className="camera-controls">
               <span><i /> {scannerStatus}</span>
               <div className="camera-actions">
@@ -811,10 +1031,37 @@ function App() {
               </div>
               {!valid && plate.length > 0 && <small>Brug formatet AB 12 345</small>}
             </div>
+            <div className={`test-mode-card ${testMode ? "active" : ""}`}>
+              <div>
+                <FlaskConical />
+                <span>
+                  <strong>Testtilstand</strong>
+                  <small>Test med TT 00 000 uden database, lokation eller push.</small>
+                </span>
+              </div>
+              <div>
+                <button type="button" onClick={() => setTestMode((current) => !current)}>
+                  {testMode ? "Slå fra" : "Slå til"}
+                </button>
+                <button type="button" className="test-run" onClick={runLocalTestMatch}>
+                  Kør testmatch
+                </button>
+              </div>
+            </div>
           </div>
-          <ResultPanel result={result} error={error} loading={loading} />
+          <ResultPanel
+            result={result}
+            error={error}
+            loading={loading}
+            onReport={openReport}
+          />
         </section>
-        <Recent history={history} />
+        <Recent
+          history={history}
+          onDelete={(checkedAt) => setHistory((current) =>
+            current.filter((item) => item.checkedAt !== checkedAt))}
+          onClear={() => setHistory([])}
+        />
         <AlertSection
           scanResult={alertScanResult}
           scanSupported={Capacitor.isNativePlatform()}
@@ -884,6 +1131,38 @@ function App() {
               </a>}
           </section>
         </div>}
+      {pendingPlateConfirmation &&
+        <div className="plate-confirm-backdrop" role="presentation">
+          <section className="plate-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="plate-confirm-title">
+            <div className="plate-confirm-icon"><ScanLine /></div>
+            <p>Kontrollér aflæsningen</p>
+            <h2 id="plate-confirm-title">
+              {pendingPlateConfirmation.purpose === "alert"
+                ? "Brug denne plade i advarslen?"
+                : "Tjek denne nummerplade?"}
+            </h2>
+            <input
+              value={displayPlate(pendingPlateConfirmation.plate)}
+              onChange={(event) => setPendingPlateConfirmation((current) => current
+                ? { ...current, plate: displayPlate(event.target.value) }
+                : current)}
+              autoFocus
+              autoCapitalize="characters"
+              aria-label="Bekræft scannet nummerplade"
+            />
+            <small>Ret nummerpladen, hvis kameraet har læst et tegn forkert.</small>
+            <button
+              className="plate-confirm-primary"
+              disabled={!/^[A-ZÆØÅ]{2}\s?\d{2}\s?\d{3}$/.test(pendingPlateConfirmation.plate)}
+              onClick={() => void confirmScannedPlate()}
+            >
+              <Check /> Bekræft nummerplade
+            </button>
+            <button className="plate-confirm-cancel" onClick={() => setPendingPlateConfirmation(null)}>
+              Scan igen senere
+            </button>
+          </section>
+        </div>}
       {matchedAlert &&
         <div className="match-backdrop" role="presentation">
           <section className="match-dialog" role="alertdialog" aria-modal="true" aria-labelledby="match-title">
@@ -915,9 +1194,42 @@ function App() {
               </time>
             </div>
             <button onClick={() => setMatchedAlert(null)}>FORSTÅET</button>
+            {matchedAlert.id !== "local-test-alert" &&
+              <button className="match-report" onClick={() => {
+                openReport(matchedAlert);
+                setMatchedAlert(null);
+              }}>
+                <Flag /> Rapportér forkert advarsel
+              </button>}
             <small>
               Observationen er indsendt af en bruger og er ikke verificeret registerinformation.
             </small>
+          </section>
+        </div>}
+      {reportAlert &&
+        <div className="report-dialog-backdrop" role="presentation">
+          <section className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title">
+            <button className="report-close" onClick={() => setReportAlert(null)} aria-label="Luk"><X /></button>
+            <Flag />
+            <h2 id="report-title">Rapportér forkert advarsel</h2>
+            <p>{displayPlate(reportAlert.plate)} · Forklar kort, hvorfor observationen bør gennemgås.</p>
+            <textarea
+              value={reportReason}
+              onChange={(event) => setReportReason(event.target.value)}
+              placeholder="Fx nummerpladen er læst forkert eller observationen er ikke længere relevant"
+              minLength={10}
+              maxLength={300}
+            />
+            <span>{reportReason.length} / 300</span>
+            <button
+              className="report-submit"
+              disabled={reportReason.trim().length < 10 || reporting || Boolean(reportMessage)}
+              onClick={() => void submitReport()}
+            >
+              {reporting ? <span className="spinner" /> : <Flag />}
+              {reporting ? "Sender…" : "Send til moderation"}
+            </button>
+            {reportMessage && <p className="report-message" role="status">{reportMessage}</p>}
           </section>
         </div>}
       {nearbyOnboardingUserId &&
@@ -1074,10 +1386,12 @@ function ResultPanel({
   result,
   error,
   loading,
+  onReport,
 }: {
   result: RegistryCheck | null;
   error: RegistryError | null;
   loading: boolean;
+  onReport: (alert: VehicleAlert) => void;
 }) {
   if (loading) {
     return <aside className="result-panel panel empty">
@@ -1119,8 +1433,19 @@ function ResultPanel({
             <dl>
               <Fact label="Indsendt af">{result.alert.reporterName}</Fact>
               <Fact label="Oprettet">{formatRelativeTime(result.alert.createdAt)}</Fact>
+              <Fact label="Senest set">
+                {formatRelativeTime(result.alert.lastSeenAt ?? result.alert.createdAt)}
+              </Fact>
+              <Fact label="Observationer">
+                {result.alert.observationCount} fra {result.alert.distinctReporterCount} bruger
+                {result.alert.distinctReporterCount === 1 ? "" : "e"}
+              </Fact>
             </dl>
             <small>Observationen er indsendt af en bruger og er ikke verificeret registerinformation.</small>
+            {result.alert.id !== "local-test-alert" &&
+              <button className="result-report-button" onClick={() => onReport(result.alert!)}>
+                <Flag /> Rapportér forkert advarsel
+              </button>}
           </section>
         : <section className="registry-clear">
             <ShieldCheck />
@@ -1137,20 +1462,43 @@ function ResultPanel({
   </aside>;
 }
 
-function Recent({ history }: { history: RegistryCheck[] }) {
+function Recent({
+  history,
+  onDelete,
+  onClear,
+}: {
+  history: RegistryCheck[];
+  onDelete: (checkedAt: string) => void;
+  onClear: () => void;
+}) {
   return <section className="recent panel" id="seneste-scanninger">
-    <div className="recent-head"><h2>Seneste registertjek</h2><span>{history.length} tjek denne session</span></div>
+    <div className="recent-head">
+      <div>
+        <h2>Privat scanningshistorik</h2>
+        <span>Gemmes kun lokalt på denne telefon · {history.length} tjek</span>
+      </div>
+      {history.length > 0 &&
+        <button type="button" onClick={onClear}><Trash2 /> Ryd historik</button>}
+    </div>
     {history.length === 0
       ? <div className="recent-empty">Dine gennemførte registertjek vises her.</div>
       : <div className="table-wrap"><table>
-        <thead><tr><th>Tidspunkt</th><th>Nummerplade</th><th>Resultat</th><th>Observation</th></tr></thead>
-        <tbody>{history.map((item) => <tr key={item.plate}>
+        <thead><tr><th>Tidspunkt</th><th>Nummerplade</th><th>Resultat</th><th>Observation</th><th /></tr></thead>
+        <tbody>{history.map((item) => <tr key={`${item.checkedAt}-${item.plate}`}>
           <td>{formatCheckedAt(item.checkedAt)}</td>
           <td className="plate-cell">{displayPlate(item.plate)}</td>
           <td className={item.alert ? "danger" : "success"}>
             {item.alert ? "Match fundet" : "Intet match"}
           </td>
           <td>{item.alert?.description ?? "Ingen aktiv brugeradvarsel"}</td>
+          <td>
+            <button
+              type="button"
+              className="history-delete"
+              onClick={() => onDelete(item.checkedAt)}
+              aria-label={`Slet registertjek for ${displayPlate(item.plate)}`}
+            ><Trash2 /></button>
+          </td>
         </tr>)}</tbody>
       </table></div>}
   </section>;

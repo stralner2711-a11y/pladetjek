@@ -58,6 +58,11 @@ export type VideoCrop = {
   height: number;
 };
 
+export type CameraFocusPoint = {
+  x: number;
+  y: number;
+};
+
 type NormalizedCandidate = {
   plate: string;
   substitutions: number;
@@ -280,6 +285,25 @@ export function plateCaptureFilter(luminance: number) {
   if (luminance < 82) return "grayscale(1) brightness(1.5) contrast(1.55)";
   if (luminance < 112) return "grayscale(1) brightness(1.2) contrast(1.45)";
   return "grayscale(1) contrast(1.35)";
+}
+
+export function clampCameraZoom(value: number, minimum: number, maximum: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(minimum) || !Number.isFinite(maximum)) {
+    return minimum;
+  }
+  return Math.min(Math.max(value, Math.min(minimum, maximum)), Math.max(minimum, maximum));
+}
+
+export function calculateFocusPoint(
+  clientX: number,
+  clientY: number,
+  bounds: { left: number; top: number; width: number; height: number },
+): CameraFocusPoint {
+  if (bounds.width <= 0 || bounds.height <= 0) return { x: 0.5, y: 0.5 };
+  return {
+    x: Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width)),
+    y: Math.min(1, Math.max(0, (clientY - bounds.top) / bounds.height)),
+  };
 }
 
 export function calculateCoverCrop(

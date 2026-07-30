@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  CarFront,
   CheckCircle2,
   ChevronRight,
   Eye,
   EyeOff,
+  FileClock,
+  Flag,
   KeyRound,
   LockKeyhole,
   Search,
@@ -21,6 +24,7 @@ import {
   type AdminUser,
   type MyProfile,
 } from "./account-service";
+import { AdminRegistryPanel, type AdminRegistrySection } from "./AdminRegistryPanel";
 import "./account.css";
 
 type AdminUsersScreenProps = {
@@ -41,6 +45,7 @@ function formatDateTime(value: string | null) {
 }
 
 export function AdminUsersScreen({ currentProfile, onBack }: AdminUsersScreenProps) {
+  const [section, setSection] = useState<"users" | AdminRegistrySection>("users");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [search, setSearch] = useState("");
@@ -66,9 +71,10 @@ export function AdminUsersScreen({ currentProfile, onBack }: AdminUsersScreenPro
   }
 
   useEffect(() => {
+    if (section !== "users") return;
     const timer = window.setTimeout(() => void loadUsers(), 250);
     return () => window.clearTimeout(timer);
-  }, [search, status]);
+  }, [search, status, section]);
 
   async function changeStatus(nextStatus: AccountStatus) {
     if (!selected || working) return;
@@ -105,9 +111,25 @@ export function AdminUsersScreen({ currentProfile, onBack }: AdminUsersScreenPro
   return <section className="admin-page">
     <div className="admin-titlebar">
       <button type="button" onClick={onBack} aria-label="Tilbage"><ArrowLeft /></button>
-      <div><p><LockKeyhole /> Kun creator og administratorer</p><h1>Brugerstyring</h1></div>
+      <div><p><LockKeyhole /> Kun creator og administratorer</p><h1>Administration</h1></div>
     </div>
 
+    <nav className="admin-section-tabs" aria-label="Administrationsområder">
+      <button className={section === "users" ? "active" : ""} onClick={() => setSection("users")}>
+        <UsersRound /> Brugere
+      </button>
+      <button className={section === "alerts" ? "active" : ""} onClick={() => setSection("alerts")}>
+        <CarFront /> Advarsler
+      </button>
+      <button className={section === "reports" ? "active" : ""} onClick={() => setSection("reports")}>
+        <Flag /> Rapporter
+      </button>
+      <button className={section === "audit" ? "active" : ""} onClick={() => setSection("audit")}>
+        <FileClock /> Log
+      </button>
+    </nav>
+
+    {section === "users" && <>
     <div className="admin-toolbar">
       <div className="admin-search">
         <Search />
@@ -186,6 +208,9 @@ export function AdminUsersScreen({ currentProfile, onBack }: AdminUsersScreenPro
             <div><dt>Senest logget ind</dt><dd>{formatDateTime(selected.lastSignInAt)}</dd></div>
             <div><dt>Senest aktiv</dt><dd>{formatDateTime(selected.lastActiveAt)}</dd></div>
             <div><dt>Synlighed</dt><dd>{selected.hideFromPeers ? <><EyeOff /> Anonym for andre</> : <><Eye /> {selected.username}</>}</dd></div>
+            <div><dt>Intern troværdighed</dt><dd>{selected.reputationScore}/100 · {selected.trustLevel}</dd></div>
+            <div><dt>Oprettede advarsler</dt><dd>{selected.alertCount}</dd></div>
+            <div><dt>Afventende rapporter</dt><dd>{selected.pendingReportCount}</dd></div>
             <div>
               <dt>Moderation</dt>
               <dd className={selected.accountStatus === "active" ? "success" : "danger"}>
@@ -235,5 +260,8 @@ export function AdminUsersScreen({ currentProfile, onBack }: AdminUsersScreenPro
             </div>}
         </aside>
       </div>}
+    </>}
+
+    {section !== "users" && <AdminRegistryPanel section={section} />}
   </section>;
 }

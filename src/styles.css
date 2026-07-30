@@ -105,3 +105,36 @@
   .incoming-alert{top:70px;right:10px;width:calc(100vw - 20px)}
   .match-dialog{padding:23px 17px}.match-dialog h2{font-size:17px}.match-plate{font-size:24px;padding:9px 12px}
 }
+
+.camera-stage.focus-enabled{cursor:crosshair;touch-action:manipulation}
+button.low-light-hint{font-family:inherit;cursor:pointer;animation:torch-pulse 1.4s ease-in-out infinite}
+.low-light-static{cursor:default}
+.focus-ring{position:absolute;z-index:4;width:54px;height:54px;border:2px solid var(--cyan);border-radius:8px;transform:translate(-50%,-50%);display:grid;place-items:center;color:var(--cyan);pointer-events:none;animation:focus-pop .9s ease-out forwards}
+.focus-ring svg{width:24px}
+@keyframes focus-pop{0%{opacity:0;scale:1.4}20%{opacity:1;scale:1}80%{opacity:1}100%{opacity:0;scale:.86}}
+.camera-zoom{height:41px;padding:0 15px;border-top:1px solid var(--line);display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:9px;color:#b9cad4;font-size:11px;background:#091a28}
+.camera-zoom>svg{width:17px;color:var(--cyan)}.camera-zoom input{width:100%;accent-color:var(--cyan)}
+.test-mode-card{margin:0 16px 16px;padding:11px 12px;border:1px solid #314b5c;border-radius:7px;background:#081927;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.test-mode-card.active{border-color:#a875d4;background:rgba(168,117,212,.07)}
+.test-mode-card>div{display:flex;align-items:center;gap:9px}.test-mode-card>div:first-child>svg{width:20px;color:#a875d4;flex:0 0 auto}
+.test-mode-card span{display:flex;flex-direction:column}.test-mode-card strong{font-size:11px}.test-mode-card small{color:var(--muted);font-size:9px;line-height:1.35}
+.test-mode-card button{height:33px;border:1px solid #4d6170;border-radius:5px;background:transparent;color:#d8e6ee;padding:0 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap}
+.test-mode-card .test-run{border-color:#a875d4;color:#e4c4ff}
+.result-report-button{margin-top:13px;border:1px solid #52697a;border-radius:6px;background:transparent;color:#c8d7df;min-height:38px;padding:0 12px;display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px}.result-report-button svg{width:15px}
+.recent-head>div{display:flex;flex-direction:column;gap:2px}.recent-head>button{border:0;background:transparent;color:#ff938b;display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer}.recent-head>button svg,.history-delete svg{width:15px}
+.history-delete{width:31px;height:31px;border:1px solid #3b5262;border-radius:5px;background:transparent;color:#93a8b6;display:grid;place-items:center;cursor:pointer}.history-delete:hover{color:var(--red);border-color:var(--red)}
+.plate-confirm-backdrop,.report-dialog-backdrop{position:fixed;inset:0;background:rgba(1,7,12,.84);backdrop-filter:blur(5px);z-index:145;display:grid;place-items:center;padding:20px}
+.plate-confirm-dialog{width:min(460px,100%);background:#0a1e2e;border:1px solid #426175;border-top:3px solid var(--cyan);border-radius:11px;padding:27px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.58)}
+.plate-confirm-icon{width:58px;height:58px;border-radius:50%;background:rgba(48,200,242,.1);color:var(--cyan);display:grid;place-items:center;margin:0 auto 12px}.plate-confirm-icon svg{width:28px}
+.plate-confirm-dialog>p{margin:0;color:var(--cyan);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em}.plate-confirm-dialog h2{margin:4px 0 18px;font-size:22px}
+.plate-confirm-dialog>input{width:100%;height:64px;border:2px solid #7190a3;border-radius:7px;background:#f8fafb;color:#0a1720;text-align:center;font-size:29px;font-weight:800;letter-spacing:.13em;outline:0}.plate-confirm-dialog>input:focus{border-color:var(--cyan);box-shadow:0 0 0 4px rgba(48,200,242,.11)}
+.plate-confirm-dialog>small{display:block;margin:9px 0 17px;color:var(--muted);font-size:10px}.plate-confirm-primary,.plate-confirm-cancel{width:100%;min-height:46px;border-radius:6px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}.plate-confirm-primary{border:0;background:var(--cyan);color:#032033}.plate-confirm-primary:disabled{opacity:.45;cursor:not-allowed}.plate-confirm-primary svg{width:18px}.plate-confirm-cancel{margin-top:8px;border:1px solid #3d586a;background:transparent;color:#c8d7df}
+.match-dialog>.match-report{margin-top:8px;background:transparent;color:#ffaaa4;border:1px solid rgba(255,107,93,.55);display:flex;align-items:center;justify-content:center;gap:7px}.match-dialog>.match-report:hover{background:rgba(255,107,93,.08)}.match-report svg{width:16px}
+.report-dialog{position:relative;width:min(490px,100%);background:#0a1e2e;border:1px solid #426175;border-radius:11px;padding:27px;box-shadow:0 24px 80px rgba(0,0,0,.58)}.report-dialog>.report-close{position:absolute;right:12px;top:12px;border:0;background:transparent;color:var(--muted);cursor:pointer}.report-close svg{width:19px}.report-dialog>svg{width:32px;color:var(--amber)}.report-dialog h2{margin:8px 0 5px}.report-dialog>p{margin:0 0 15px;color:var(--muted);font-size:12px;line-height:1.5}.report-dialog textarea{display:block;width:100%;height:120px;resize:vertical;border:1px solid #557184;border-radius:7px;background:#f8fafb;color:#102333;padding:12px;font:inherit;outline:0}.report-dialog textarea:focus{border-color:var(--cyan)}.report-dialog>span{display:block;text-align:right;margin:5px 0 11px;color:var(--muted);font-size:9px}.report-submit{width:100%;min-height:46px;border:0;border-radius:6px;background:var(--amber);color:#2a1a00;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}.report-submit:disabled{opacity:.45;cursor:not-allowed}.report-submit svg{width:17px}.report-message{padding:10px!important;margin:11px 0 0!important;border:1px solid #3d5b6e;border-radius:6px;color:#dce9f0!important}
+
+@media(max-width:680px){
+  .camera-zoom{height:43px}
+  .test-mode-card{align-items:flex-start;flex-direction:column}.test-mode-card>div:last-child{width:100%}.test-mode-card button{flex:1}
+  .recent-head>button{margin-top:5px}
+  .plate-confirm-dialog,.report-dialog{padding:23px 17px}.plate-confirm-dialog>input{font-size:24px}
+}

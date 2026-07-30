@@ -18,6 +18,17 @@ Dette er den eneste Supabase-konfiguration, som må bruges af Pladetjek.
 - begrænser matchopslag til 120 pr. minut,
 - lader advarsler udløbe efter én time.
 
+Produktionsprojektet opdateres i denne rækkefølge:
+
+1. `schema.sql` ved en helt ny installation.
+2. SQL-filerne i `migrations/` i stigende tidsrækkefølge.
+
+Migrationen `20260730212810_user_registry_feature_pack.sql` tilføjer
+sammenlagte observationer, fejlrapportering, intern troværdighed og
+revisionslog. Tabellerne ligger i `private`, har RLS aktiveret og har ingen
+direkte tabelrettigheder til appens `authenticated`-rolle. Appen bruger kun de
+smalle, eksplicit tildelte RPC-funktioner i `public`.
+
 Der må aldrig placeres en `secret`- eller `service_role`-nøgle i appen, `.env`,
 GitHub eller APK-filen. Frontenden bruger kun projektets publishable-nøgle.
 

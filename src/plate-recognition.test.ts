@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   advancePlateEvidence,
+  calculateFocusPoint,
   calculateCoverCrop,
+  clampCameraZoom,
   estimateImageLuminance,
   extractDanishPlate,
   findBestPlateCandidate,
@@ -151,4 +153,21 @@ test("kortlægger den synlige scanningsramme til videoets objekt-fit-cover", () 
   assert.ok(Math.abs(crop.y - 507.6) < 1);
   assert.ok(Math.abs(crop.width - 748.8) < 1);
   assert.ok(Math.abs(crop.height - 313.2) < 1);
+});
+
+test("begrænser kamerazoom til telefonens understøttede område", () => {
+  assert.equal(clampCameraZoom(0.5, 1, 5), 1);
+  assert.equal(clampCameraZoom(3.25, 1, 5), 3.25);
+  assert.equal(clampCameraZoom(9, 1, 5), 5);
+});
+
+test("omsætter et tryk på kamerafeltet til et normaliseret fokuspunkt", () => {
+  assert.deepEqual(
+    calculateFocusPoint(250, 175, { left: 50, top: 25, width: 400, height: 300 }),
+    { x: 0.5, y: 0.5 },
+  );
+  assert.deepEqual(
+    calculateFocusPoint(-20, 900, { left: 50, top: 25, width: 400, height: 300 }),
+    { x: 0, y: 1 },
+  );
 });

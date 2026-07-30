@@ -26,6 +26,57 @@ export type MyProfile = {
 export type AdminUser = MyProfile & {
   lastSignInAt: string | null;
   totalCount: number;
+  reputationScore: number;
+  trustLevel: "trusted" | "established" | "watch";
+  alertCount: number;
+  pendingReportCount: number;
+};
+
+export type AdminAlert = {
+  alertId: string;
+  plate: string;
+  description: string;
+  reporterId: string;
+  reporterEmail: string | null;
+  reporterUsername: string | null;
+  isActive: boolean;
+  createdAt: string;
+  observationCount: number;
+  distinctReporterCount: number;
+  reportCount: number;
+  reputationScore: number;
+  totalCount: number;
+};
+
+export type AdminAlertReport = {
+  reportId: string;
+  reportStatus: "pending" | "confirmed" | "dismissed";
+  reason: string;
+  createdAt: string;
+  reviewedAt: string | null;
+  resolutionNote: string | null;
+  alertId: string;
+  plate: string;
+  alertDescription: string;
+  alertIsActive: boolean;
+  alertReporterId: string;
+  alertReporterEmail: string | null;
+  reportedBy: string;
+  reportedByEmail: string | null;
+  totalCount: number;
+};
+
+export type AdminAuditEntry = {
+  auditId: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  targetType: "user" | "alert" | "report";
+  targetUserId: string | null;
+  targetAlertId: string | null;
+  targetReportId: string | null;
+  details: Record<string, unknown>;
+  createdAt: string;
 };
 
 type ProfileRow = {
@@ -40,6 +91,10 @@ type ProfileRow = {
   is_anonymous: boolean;
   last_sign_in_at?: string | null;
   total_count?: number | string;
+  reputation_score?: number | string;
+  trust_level?: "trusted" | "established" | "watch";
+  alert_count?: number | string;
+  pending_report_count?: number | string;
 };
 
 const NATIVE_LOGIN_REDIRECT = "dk.pladetjek.app://login-callback";
@@ -71,6 +126,10 @@ function readableAccountError(message: string) {
   if (message.includes("CREATOR_REQUIRED")) return "Kun creator kan ændre denne bruger.";
   if (message.includes("PROTECTED_ACCOUNT")) return "Denne konto er beskyttet.";
   if (message.includes("USER_NOT_FOUND")) return "Brugeren findes ikke længere.";
+  if (message.includes("ALERT_NOT_FOUND")) return "Advarslen findes ikke længere.";
+  if (message.includes("REPORT_NOT_FOUND")) return "Rapporten findes ikke længere.";
+  if (message.includes("REPORT_ALREADY_RESOLVED")) return "Rapporten er allerede behandlet.";
+  if (message.includes("INVALID_NOTE")) return "Skriv en kort begrundelse på mindst 3 tegn.";
   if (message.toLowerCase().includes("signups not allowed")) {
     return "Der findes ingen konto med den e-mail. Vælg “Opret bruger”.";
   }
@@ -187,7 +246,7 @@ export async function signOutToAnonymous() {
 
 export async function adminListUsers(search: string, status: "all" | AccountStatus) {
   const client = await requireAuthenticatedClient();
-  const { data, error } = await client.rpc("admin_list_users", {
+  const { data, error } = await client.rpc("admin_list_users_v2", {
     p_search: search,
     p_status: status,
     p_limit: 100,
@@ -198,6 +257,10 @@ export async function adminListUsers(search: string, status: "all" | AccountStat
     ...mapProfile(row),
     lastSignInAt: row.last_sign_in_at ?? null,
     totalCount: Number(row.total_count ?? 0),
+    reputationScore: Number(row.reputation_score ?? 50),
+    trustLevel: row.trust_level ?? "established",
+    alertCount: Number(row.alert_count ?? 0),
+    pendingReportCount: Number(row.pending_report_count ?? 0),
   }));
 }
 
@@ -221,4 +284,110 @@ export async function adminSetUserRole(userId: string, role: "user" | "admin") {
     p_role: role,
   });
   if (error) throw new Error(readableAccountError(error.message));
+}
+
+export async function adminListAlerts(
+  search: string,
+  status: "all" | "active" | "inactive",
+) {
+  const client = await requireAuthenticatedClient();
+  const { data, error } = await client.rpc("admin_list_alerts", {
+    p_search: search,
+    p_status: status,
+    p_limit: 200,
+    p_offset: 0,
+  });
+  if (error) throw new Error(readableAccountError(error.message));
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row): AdminAlert => ({
+    alertId: String(row.alert_id),
+    plate: String(row.plate),
+    description: String(row.description),
+    reporterId: String(row.reporter_id),
+    reporterEmail: row.reporter_email ? String(row.reporter_email) : null,
+    reporterUsername: row.reporter_username ? String(row.reporter_username) : null,
+    isActive: Boolean(row.is_active),
+    createdAt: String(row.created_at),
+    observationCount: Number(row.observation_count ?? 0),
+    distinctReporterCount: Number(row.distinct_reporter_count ?? 0),
+    reportCount: Number(row.report_count ?? 0),
+    reputationScore: Number(row.reputation_score ?? 50),
+    totalCount: Number(row.total_count ?? 0),
+  }));
+}
+
+export async function adminSetAlertStatus(
+  alertId: string,
+  isActive: boolean,
+  note: string,
+) {
+  const client = await requireAuthenticatedClient();
+  const { error } = await client.rpc("admin_set_alert_status", {
+    p_alert_id: alertId,
+    p_is_active: isActive,
+    p_note: note || null,
+  });
+  if (error) throw new Error(readableAccountError(error.message));
+}
+
+export async function adminListAlertReports(
+  status: "all" | "pending" | "confirmed" | "dismissed",
+) {
+  const client = await requireAuthenticatedClient();
+  const { data, error } = await client.rpc("admin_list_alert_reports", {
+    p_status: status,
+    p_limit: 200,
+    p_offset: 0,
+  });
+  if (error) throw new Error(readableAccountError(error.message));
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row): AdminAlertReport => ({
+    reportId: String(row.report_id),
+    reportStatus: String(row.report_status) as AdminAlertReport["reportStatus"],
+    reason: String(row.reason),
+    createdAt: String(row.created_at),
+    reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null,
+    resolutionNote: row.resolution_note ? String(row.resolution_note) : null,
+    alertId: String(row.alert_id),
+    plate: String(row.plate),
+    alertDescription: String(row.alert_description),
+    alertIsActive: Boolean(row.alert_is_active),
+    alertReporterId: String(row.alert_reporter_id),
+    alertReporterEmail: row.alert_reporter_email ? String(row.alert_reporter_email) : null,
+    reportedBy: String(row.reported_by),
+    reportedByEmail: row.reported_by_email ? String(row.reported_by_email) : null,
+    totalCount: Number(row.total_count ?? 0),
+  }));
+}
+
+export async function adminResolveAlertReport(
+  reportId: string,
+  resolution: "confirmed" | "dismissed",
+  note: string,
+) {
+  const client = await requireAuthenticatedClient();
+  const { error } = await client.rpc("admin_resolve_alert_report", {
+    p_report_id: reportId,
+    p_resolution: resolution,
+    p_note: note,
+  });
+  if (error) throw new Error(readableAccountError(error.message));
+}
+
+export async function adminListModerationAudit() {
+  const client = await requireAuthenticatedClient();
+  const { data, error } = await client.rpc("admin_list_moderation_audit", {
+    p_limit: 200,
+  });
+  if (error) throw new Error(readableAccountError(error.message));
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row): AdminAuditEntry => ({
+    auditId: String(row.audit_id),
+    actorId: row.actor_id ? String(row.actor_id) : null,
+    actorEmail: row.actor_email ? String(row.actor_email) : null,
+    action: String(row.action),
+    targetType: String(row.target_type) as AdminAuditEntry["targetType"],
+    targetUserId: row.target_user_id ? String(row.target_user_id) : null,
+    targetAlertId: row.target_alert_id ? String(row.target_alert_id) : null,
+    targetReportId: row.target_report_id ? String(row.target_report_id) : null,
+    details: (row.details ?? {}) as Record<string, unknown>,
+    createdAt: String(row.created_at),
+  }));
 }
