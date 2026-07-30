@@ -4,10 +4,11 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   Camera, Check, Clock3, Download, ExternalLink, Flag, Flashlight, FlaskConical,
   Focus, Gauge, History, MapPin, Menu, Play, RefreshCw, ScanLine, Search, ShieldCheck,
-  Trash2, TriangleAlert, UserRound, UsersRound, X, ZoomIn,
+  Trash2, TriangleAlert, UserRound, UsersRound, Video, X, ZoomIn,
 } from "lucide-react";
 import { AccountScreen } from "./AccountScreen";
 import { AdminUsersScreen } from "./AdminUsersScreen";
+import { DashcamScreen } from "./DashcamScreen";
 import {
   getMyProfile,
   initializeAuthLinks,
@@ -64,7 +65,7 @@ type RegistryCheck = {
 };
 
 type RegistryError = { code: string; message: string };
-type ActiveView = "scanner" | "account" | "admin";
+type ActiveView = "scanner" | "dashcam" | "account" | "admin";
 type AlertScanResult = {
   plate: string;
   capturedAt: number;
@@ -864,6 +865,10 @@ function App() {
     setReportMessage("");
   }
 
+  function handleDashcamPlate(detectedPlate: string) {
+    setPlate(displayPlate(detectedPlate));
+  }
+
   async function submitReport() {
     const reason = reportReason.replace(/\s+/g, " ").trim();
     if (!reportAlert || reason.length < 10 || reporting || reportAlert.id === "local-test-alert") return;
@@ -905,6 +910,10 @@ function App() {
           >
             <TriangleAlert /><span>Advarsel</span>
           </button>
+          <button
+            className={`nav-item ${activeView === "dashcam" ? "active" : ""}`}
+            onClick={() => navigateTo("dashcam")}
+          ><Video /><span>Dashcam</span></button>
           <button
             className={`nav-item ${activeView === "account" ? "active" : ""}`}
             onClick={() => navigateTo("account")}
@@ -1068,6 +1077,8 @@ function App() {
           onStartScan={() => void startAlertPlateScan()}
         />
         </>}
+        {activeView === "dashcam" &&
+          <DashcamScreen onPlateConfirmed={handleDashcamPlate} />}
         {activeView === "account" &&
           <AccountScreen
             profile={accountProfile}
@@ -1096,6 +1107,9 @@ function App() {
           window.setTimeout(() => document.getElementById("seneste-scanninger")?.scrollIntoView({ behavior: "smooth" }), 250);
         }}>
           <History /> Historik
+        </button>
+        <button className={activeView === "dashcam" ? "active" : ""} onClick={() => navigateTo("dashcam")}>
+          <Video /> Dashcam
         </button>
         <button className={activeView === "account" || activeView === "admin" ? "active" : ""} onClick={() => navigateTo("account")}>
           <UserRound /> Profil
