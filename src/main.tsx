@@ -14,6 +14,12 @@ import {
   updateIsRequired,
 } from "./update-system";
 import { extractDanishPlate } from "./plate-recognition";
+import {
+  createSharedAlert,
+  matchSharedAlert,
+  sharedAlertsAreConfigured,
+  type SharedVehicleAlert,
+} from "./shared-alerts";
 import "./styles.css";
 
 type InstallPromptEvent = Event & {
@@ -54,13 +60,7 @@ type Lookup = {
 
 type LookupError = { code: string; message: string };
 
-type VehicleAlert = {
-  id: string;
-  plate: string;
-  description: string;
-  createdAt: string;
-  expiresAt: string;
-};
+type VehicleAlert = SharedVehicleAlert;
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const UPDATE_REPOSITORY_URL = String(
@@ -144,6 +144,47 @@ async function lookupVehicle(plate: string): Promise<Lookup> {
     } satisfies LookupError;
   }
   return payload.data;
+}
+
+async function matchVehicleAlert(plate: string): Promise<VehicleAlert | null> {
+  if (sharedAlertsAreConfigured()) return matchSharedAlert(plate);
+
+  const response = await fetch(
+    apiUrl(`/api/alerts/match/${encodeURIComponent(normalizePlate(plate))}`),
+    { headers: { Accept: "application/json" } },
+  );
+  const payload = await response.json().catch(() => ({})) as {
+    data?: VehicleAlert | null;
+  };
+  if (!response.ok) throw new Error("Advarselsmatch kunne ikke kontrolleres.");
+  return payload.data ?? null;
+}
+
+async function createVehicleAlert(
+  plate: string,
+  description: string,
+): Promise<{ alert: VehicleAlert; duplicate: boolean }> {
+  if (sharedAlertsAreConfigured()) return createSharedAlert(plate, description);
+
+  const response = await fetch(apiUrl("/api/alerts"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      plate: normalizePlate(plate),
+      description,
+      clientId: getClientId(),
+      confirmed: true,
+    }),
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    data?: VehicleAlert;
+    duplicate?: boolean;
+    message?: string;
+  };
+  if (!response.ok || !payload.data) {
+    throw new Error(payload.message ?? "Advarslen kunne ikke sendes.");
+  }
+  return { alert: payload.data, duplicate: Boolean(payload.duplicate) };
 }
 
 function App() {
@@ -259,15 +300,9 @@ function App() {
           const recent = lastMatchCheck.current;
           if (recent.plate !== candidate || now - recent.checkedAt > 15_000) {
             lastMatchCheck.current = { plate: candidate, checkedAt: now };
-            const response = await fetch(
-              apiUrl(`/api/alerts/match/${encodeURIComponent(candidate)}`),
-              { headers: { Accept: "application/json" } },
-            );
-            const payload = await response.json().catch(() => ({})) as {
-              data?: VehicleAlert | null;
-            };
-            if (response.ok && payload.data && !cancelled) {
-              setMatchedAlert(payload.data);
+            const alert = await matchVehicleAlert(candidate);
+            if (alert && !cancelled) {
+              setMatchedAlert(alert);
               navigator.vibrate?.([350, 120, 350, 120, 500]);
             }
           }
@@ -544,26 +579,9 @@ function AlertSection() {
     setSending(true);
     setStatusMessage("");
     try {
-      const response = await fetch(apiUrl("/api/alerts"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          plate: normalizePlate(alertPlate),
-          description: cleanDescription,
-          clientId: getClientId(),
-          confirmed: true,
-        }),
-      });
-      const payload = await response.json().catch(() => ({})) as {
-        data?: VehicleAlert;
-        duplicate?: boolean;
-        message?: string;
-      };
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.message ?? "Advarslen kunne ikke sendes.");
-      }
+      const result = await createVehicleAlert(alertPlate, cleanDescription);
       setStatusMessage(
-        payload.duplicate
+        result.duplicate
           ? "Der findes allerede en aktiv advarsel for nummerpladen."
           : "Advarslen er gemt og vises kun, når scanneren finder et match.",
       );

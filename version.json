@@ -1,14 +1,15 @@
 {
-  "activeVersion": "1.1.0",
-  "activeVersionCode": 2,
+  "activeVersion": "1.2.0",
+  "activeVersionCode": 3,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.1.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.1.0",
-  "sha256": "3c3142bde8eb470e78f17a26bd834e22cada331c51035bcb30300d67095a4c61",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.2.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.2.0",
+  "sha256": "1d47cc2d9ed28381e7195b8c74c806bbf8beb3663c1d379aeb3d7e40cb65f288",
   "changelog": [
+    "Fælles matchadvarsler gemmes nu i Pladetjeks separate Supabase-projekt",
+    "Automatisk anonym login, RLS og ratebegrænsning beskytter advarslerne",
     "Tilføj nummerplade og observationstekst som en matchbaseret advarsel",
-    "Lokal Android-scanning med ML Kit",
-    "Advarslen vises kun ved et aktivt scannermatch"
+    "Advarslen vises fortsat kun ved et aktivt, præcist scannermatch"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"

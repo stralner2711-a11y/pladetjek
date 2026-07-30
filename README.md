@@ -21,8 +21,9 @@ Kamerabilledet sendes derfor ikke til OCR-servere. Appen sender kun den
 genkendte nummerplade til det præcise matchopslag.
 
 Advarsler udløber som standard efter 60 minutter og gemmes i
-`data/alerts.json` på den fælles backend. Klienterne kan ikke hente hele listen
-over aktive advarsler.
+det separate Supabase-projekt `Pladetjek` (`uolrwogzfegrdjbjvsvu`). Klienterne
+kan ikke hente hele listen over aktive advarsler; RLS og to snævre RPC-kald
+tillader kun oprettelse og et præcist match på den aktivt scannede nummerplade.
 
 ## Datakilder
 
@@ -87,11 +88,14 @@ opdateringer og de vigtige regler om versionskode og signeringsnøgle.
 - Debitorers navn, CPR og fødselsdato videresendes ikke til klienten.
 - Kun kreditors navn/CVR og hæftelsens hovedstol vises.
 - Opslag caches kun i hukommelsen i 30 sekunder og skrives ikke til disk.
-- Brugeradvarsler gemmes på backendens disk indtil deres udløbstid.
+- Brugeradvarsler gemmes i Pladetjeks separate Supabase-projekt og udløber efter
+  én time. Den lokale JSON-backend bruges kun som udviklingsfallback.
+- Hver installation får automatisk sin egen anonyme Supabase-session;
+  e-mail/password-login er deaktiveret.
 - Beskrivelsen må højst være 240 tegn og bør ikke indeholde navne eller andre
   personoplysninger.
-- Der bør tilføjes brugerlogin, adgangslog og en dokumenteret slettepolitik før
-  produktion.
+- Verificerede konti, moderation og en dokumenteret slettepolitik bør tilføjes,
+  før løsningen åbnes for en større offentlig brugergruppe.
 
 Et resultat fra Bilbogen viser en tinglyst hæftelse, ikke nødvendigvis den
 aktuelle restgæld. Kritiske resultater bør efterkontrolleres i Bilbogen.

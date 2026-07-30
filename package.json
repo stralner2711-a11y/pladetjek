@@ -1,14 +1,21 @@
 {
   "name": "pladetjek",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stralner2711-a11y/pladetjek.git"
+  },
   "scripts": {
     "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "tsx watch server/index.ts",
     "dev:web": "vite --configLoader runner",
     "preview": "vite preview",
     "build": "tsc -b && vite build --configLoader runner",
+    "check:boundaries": "node scripts/verify-project-boundaries.mjs",
+    "check": "npm run check:boundaries && npm test && npm run build",
+    "test:supabase": "tsx scripts/verify-supabase.mts",
     "android:add": "cap add android",
     "android:sync": "npm run build && cap sync android",
     "android:build": "npm run android:sync && cd android && gradlew.bat assembleDebug --no-daemon",
@@ -19,6 +26,7 @@
   "dependencies": {
     "@capacitor/android": "^8.4.2",
     "@capacitor/core": "^8.4.2",
+    "@supabase/supabase-js": "2.111.0",
     "@vitejs/plugin-react": "^4.3.4",
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",
