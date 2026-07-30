@@ -7,7 +7,9 @@ bliver sendt til klienten.
 ## Matchbaserede advarsler
 
 En bruger kan i sektionen **Tilføj advarsel** gemme en nummerplade og en kort
-observationstekst. Det sender ikke straks en alarm til andre.
+observationstekst. Nummerpladen kan indtastes manuelt eller scannes med samme
+lokale Android-genkendelse som hovedscanneren. Det sender ikke straks en alarm
+til andre.
 
 Advarslen vises først, når en anden bruger:
 

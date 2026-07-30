@@ -84,6 +84,10 @@ type LookupError = { code: string; message: string };
 
 type VehicleAlert = SharedVehicleAlert;
 type ActiveView = "scanner" | "account" | "admin";
+type AlertScanResult = {
+  plate: string;
+  capturedAt: number;
+};
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const UPDATE_REPOSITORY_URL = String(
@@ -225,6 +229,8 @@ function App() {
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scannerStatus, setScannerStatus] = useState("Eksempelvisning");
+  const [alertScanActive, setAlertScanActive] = useState(false);
+  const [alertScanResult, setAlertScanResult] = useState<AlertScanResult | null>(null);
   const [matchedAlert, setMatchedAlert] = useState<VehicleAlert | null>(null);
   const [sourcesReady, setSourcesReady] = useState<boolean | null>(null);
   const [history, setHistory] = useState<Lookup[]>([]);
@@ -249,6 +255,14 @@ function App() {
 
   const valid = /^[A-ZÆØÅ]{2}\s?\d{2}\s?\d{3}$/.test(plate.trim().toUpperCase());
 
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCameraOn(false);
+    setAlertScanActive(false);
+    setScannerStatus("Eksempelvisning");
+  }
+
   async function refreshAccount() {
     setAccountLoading(true);
     try {
@@ -262,9 +276,7 @@ function App() {
 
   function navigateTo(view: ActiveView) {
     if (view !== "scanner") {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setCameraOn(false);
+      stopCamera();
     }
     setActiveView(view);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -436,6 +448,20 @@ function App() {
           setPlate(formatted);
           setScannerStatus(`Nummerplade bekræftet · ${formatted}`);
 
+          if (alertScanActive) {
+            setAlertScanResult({ plate: formatted, capturedAt: Date.now() });
+            navigator.vibrate?.(180);
+            streamRef.current?.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+            setCameraOn(false);
+            setAlertScanActive(false);
+            window.setTimeout(() => {
+              document.getElementById("tilfoej-advarsel")?.scrollIntoView({ behavior: "smooth" });
+              document.getElementById("alert-description")?.focus();
+            }, 250);
+            return;
+          }
+
           const now = Date.now();
           const recent = lastMatchCheck.current;
           if (recent.plate !== candidate.plate || now - recent.checkedAt > 15_000) {
@@ -468,7 +494,7 @@ function App() {
       plateEvidenceRef.current = null;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [cameraOn]);
+  }, [alertScanActive, cameraOn]);
 
   async function installApp() {
     if (!installPrompt) return;
@@ -536,13 +562,13 @@ function App() {
     setUpdateOpen(false);
   }
 
-  async function toggleCamera() {
-    if (cameraOn) {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setCameraOn(false);
-      setScannerStatus("Eksempelvisning");
-      return;
+  async function startCamera(scanForAlert: boolean) {
+    setAlertScanActive(scanForAlert);
+    if (cameraOn && streamRef.current) {
+      setScannerStatus(
+        scanForAlert ? "Scan nummerpladen til advarslen…" : "Scanner efter nummerplade…",
+      );
+      return true;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -552,10 +578,31 @@ function App() {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraOn(true);
-      setScannerStatus("Scanner efter nummerplade…");
+      setScannerStatus(
+        scanForAlert ? "Scan nummerpladen til advarslen…" : "Scanner efter nummerplade…",
+      );
       setCameraError("");
+      return true;
     } catch {
+      setAlertScanActive(false);
       setCameraError("Kameraadgang blev afvist. Du kan stadig indtaste pladen manuelt.");
+      return false;
+    }
+  }
+
+  async function toggleCamera() {
+    if (cameraOn) {
+      stopCamera();
+      return;
+    }
+    await startCamera(false);
+  }
+
+  async function startAlertPlateScan() {
+    setAlertScanResult(null);
+    const started = await startCamera(true);
+    if (started) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
 
@@ -640,12 +687,16 @@ function App() {
         <section className="workspace">
           <div className="capture-panel panel">
             <div className="panel-head">
-              <span><i /> Live scanning</span>
+              <span><i /> {alertScanActive ? "Scan til advarsel" : "Live scanning"}</span>
               <button className="icon-button" aria-label="Kamera" onClick={toggleCamera}>{cameraOn ? <X /> : <Camera />}</button>
             </div>
             <div className="camera-stage">
               <img src="/demo-road.png" alt="Eksempel på kameravisning med en bil" className={cameraOn ? "hidden" : ""} />
               <video ref={videoRef} autoPlay playsInline muted className={cameraOn ? "" : "hidden"} />
+              {alertScanActive &&
+                <div className="alert-scan-banner">
+                  <TriangleAlert /> Nummerpladen overføres til advarslen efter bekræftelse
+                </div>}
               <div ref={scanFrameRef} className="scan-frame">
                 <span /><span /><span /><span />
               </div>
@@ -653,7 +704,10 @@ function App() {
             </div>
             <div className="camera-controls">
               <span><i /> {scannerStatus}</span>
-              <button onClick={toggleCamera}><Play size={16} /> {cameraOn ? "Stop kamera" : "Start kamera"}</button>
+              <button onClick={toggleCamera}>
+                {cameraOn ? <X size={16} /> : <Play size={16} />}
+                {alertScanActive ? "Annuller scanning" : cameraOn ? "Stop kamera" : "Start kamera"}
+              </button>
             </div>
             {cameraError && <p className="camera-error">{cameraError}</p>}
             <div className="manual">
@@ -680,7 +734,11 @@ function App() {
           <ResultPanel result={result} error={error} loading={loading} />
         </section>
         <Recent history={history} />
-        <AlertSection />
+        <AlertSection
+          scanResult={alertScanResult}
+          scanSupported={Capacitor.isNativePlatform()}
+          onStartScan={() => void startAlertPlateScan()}
+        />
         </>}
         {activeView === "account" &&
           <AccountScreen
@@ -785,7 +843,15 @@ function App() {
   );
 }
 
-function AlertSection() {
+function AlertSection({
+  scanResult,
+  scanSupported,
+  onStartScan,
+}: {
+  scanResult: AlertScanResult | null;
+  scanSupported: boolean;
+  onStartScan: () => void;
+}) {
   const [alertPlate, setAlertPlate] = useState("");
   const [description, setDescription] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -795,6 +861,14 @@ function AlertSection() {
   const validPlate = /^[A-ZÆØÅ]{2}\s?\d{2}\s?\d{3}$/.test(alertPlate.trim().toUpperCase());
   const cleanDescription = description.replace(/\s+/g, " ").trim();
   const validDescription = cleanDescription.length >= 5 && cleanDescription.length <= 240;
+
+  useEffect(() => {
+    if (!scanResult) return;
+    setAlertPlate(displayPlate(scanResult.plate));
+    setStatusMessage(
+      `Nummerpladen ${displayPlate(scanResult.plate)} er scannet. Tilføj en kort beskrivelse.`,
+    );
+  }, [scanResult]);
 
   async function sendAlert() {
     if (!validPlate || !validDescription || sending) return;
@@ -831,17 +905,28 @@ function AlertSection() {
         if (validPlate && validDescription) setConfirmOpen(true);
       }}>
         <label htmlFor="alert-plate">Nummerplade</label>
-        <div className="alert-plate-input">
-          <span><b>••••••••••••</b>DK</span>
-          <input
-            id="alert-plate"
-            placeholder="AB 12 345"
-            value={alertPlate}
-            onChange={(event) => setAlertPlate(displayPlate(event.target.value))}
-            autoCapitalize="characters"
-            autoComplete="off"
-            aria-invalid={alertPlate.length > 0 && !validPlate}
-          />
+        <div className="alert-plate-controls">
+          <div className="alert-plate-input">
+            <span><b>••••••••••••</b>DK</span>
+            <input
+              id="alert-plate"
+              placeholder="AB 12 345"
+              value={alertPlate}
+              onChange={(event) => setAlertPlate(displayPlate(event.target.value))}
+              autoCapitalize="characters"
+              autoComplete="off"
+              aria-invalid={alertPlate.length > 0 && !validPlate}
+            />
+          </div>
+          <button
+            className="alert-scan-button"
+            type="button"
+            onClick={onStartScan}
+            disabled={!scanSupported}
+            title={scanSupported ? "Scan nummerpladen med kameraet" : "Kræver Android-appen"}
+          >
+            <Camera /> Scan nummerplade
+          </button>
         </div>
         <label htmlFor="alert-description">Kort beskrivelse</label>
         <div className="alert-text-wrap">
