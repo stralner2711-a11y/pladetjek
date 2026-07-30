@@ -1,15 +1,15 @@
 {
-  "activeVersion": "1.5.1",
-  "activeVersionCode": 7,
+  "activeVersion": "1.6.0",
+  "activeVersionCode": 8,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.5.1/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.5.1",
-  "sha256": "7feea7d9800f18cf6da0d96d0f724cffbb691d68f06f0966b79da71438017f00",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.6.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.6.0",
+  "sha256": "f6d54a53a2d8eae92ef9386255f5b79e46eb594ef4d144d61c31d7f1fcadcf97",
   "changelog": [
-    "Nummerplader og advarselstekster gemmes nu uden automatisk udløb",
-    "Kun den konkrete scannings- og pushhændelse er tidsbegrænset",
-    "Den eksisterende DH59870-advarsel er genaktiveret og matcher igen",
-    "Appen forklarer nu tydeligt forskellen mellem en gemt advarsel og et midlertidigt match"
+    "Scan en nummerplade direkte i sektionen Tilføj advarsel",
+    "Den genkendte nummerplade udfyldes automatisk i advarselsformularen",
+    "Brugeren skriver stadig selv beskrivelsen og bekræfter, før advarslen gemmes",
+    "Tilføjelsesscanningen opretter ikke match eller push-notifikationer"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"
