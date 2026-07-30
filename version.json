@@ -1,17 +1,16 @@
 {
-  "activeVersion": "1.10.0",
-  "activeVersionCode": 14,
+  "activeVersion": "1.10.1",
+  "activeVersionCode": 15,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.10.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.10.0",
-  "sha256": "91d9fcc1ccd5d6f761f08fc143142dec9bba16efcedb251a15b11f62d4296bd2",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.10.1/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.10.1",
+  "sha256": "8c35f29e9cc8ef99bfc2b8861c7395716c2e8aec0ae1d22e47c122c25cd49be6",
   "changelog": [
-    "Dashcam er en frivillig til/fra-funktion ved siden af mobilscanneren",
-    "Forbind automatisk til et valgt dashcam-SSID på Android",
-    "Livefeed via RTSP, HLS, MJPEG eller gentagne JPEG-billeder",
-    "Lokal OCR og offline-notifikationer med lyd og vibration",
-    "Skærmen holdes tændt under aktiv dashcam-scanning"
+    "Testtilstanden er fjernet fra scannerens brugerflade",
+    "Lokale testmatch kan ikke længere aktiveres",
+    "Tidligere lokale testposter fjernes automatisk fra historikken",
+    "Alle nummerplader kontrolleres nu mod det fælles brugerregister"
   ],
   "forceUpdate": false,
-  "updatedAt": "2026-07-30"
+  "updatedAt": "2026-07-31"
 }
