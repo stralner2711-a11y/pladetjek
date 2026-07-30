@@ -1,16 +1,16 @@
 {
-  "activeVersion": "1.4.0",
-  "activeVersionCode": 5,
+  "activeVersion": "1.5.0",
+  "activeVersionCode": 6,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.4.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.4.0",
-  "sha256": "56b3a4b392ebe23501669eac3a1ce089184d109288fdabd7ff31140c540659d6",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.5.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.5.0",
+  "sha256": "b0304cd6c2eeb35d38ad1652eb76a651511aa6bc2a1c0b2e991b945ce95f0e14",
   "changelog": [
-    "Ny privat profil med konto via sikkert e-mail-link uden adgangskode",
-    "Brugere vælger selv synligt brugernavn eller Anonym bruger",
-    "Creator og administratorer får en beskyttet brugeroversigt med e-mail og internt id",
-    "Suspendering og adminroller håndhæves sikkert i Supabase",
-    "Advarselsmatch viser kun afsenderens tilladte offentlige navn"
+    "Frivillige OBS-notifikationer ved præcise nummerpladematch inden for 5 km",
+    "Beskeden viser cirka afstand, tidspunkt og et område afrundet til cirka 100–200 meter",
+    "Præcis position og push-token gemmes kun privat i Supabase og kan ikke læses af andre brugere",
+    "Positioner ældre end 30 minutter bruges ikke, og lokationen fjernes ved fravalg",
+    "Gentagne match samme sted dæmpes i 15 minutter"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"
