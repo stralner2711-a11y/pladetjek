@@ -18,6 +18,7 @@ import {
   signOutToAnonymous,
   type MyProfile,
 } from "./account-service";
+import { NearbyAlertsCard } from "./NearbyAlertsCard";
 import "./account.css";
 
 type AccountScreenProps = {
@@ -277,6 +278,9 @@ export function AccountScreen({
             </div>
           </div>
         </div>}
+
+    {profile &&
+      <NearbyAlertsCard suspended={profile.accountStatus !== "active"} />}
 
     {message && <p className="account-message" role="status">{message}</p>}
   </section>;

@@ -12,3 +12,6 @@ android/.gradle/
 android/build/
 android/app/build/
 android/capacitor-cordova-android-plugins/build/
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+supabase/.temp/

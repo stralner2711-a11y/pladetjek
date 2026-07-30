@@ -7,6 +7,11 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
   },
+  plugins: {
+    PushNotifications: {
+      presentationOptions: ["sound", "alert"],
+    },
+  },
 };
 
 export default config;

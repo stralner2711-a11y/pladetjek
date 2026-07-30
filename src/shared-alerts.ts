@@ -2,6 +2,10 @@ import {
   requireAuthenticatedClient,
   supabaseIsConfigured,
 } from "./supabase-client";
+import {
+  requestNearbyNotificationDispatch,
+  type NearbyCoordinates,
+} from "./nearby-alerts";
 
 export type SharedVehicleAlert = {
   id: string;
@@ -10,6 +14,12 @@ export type SharedVehicleAlert = {
   createdAt: string;
   expiresAt: string;
   reporterName: string;
+  notificationEventId?: string;
+  observedAt?: string;
+  notificationsQueued?: boolean;
+  nearbyDistanceMeters?: number;
+  approximateLatitude?: number;
+  approximateLongitude?: number;
 };
 
 type AlertRow = {
@@ -20,6 +30,9 @@ type AlertRow = {
   expires_at: string;
   reporter_name?: string;
   duplicate?: boolean;
+  notification_event_id?: string | null;
+  observed_at?: string | null;
+  notifications_queued?: boolean;
 };
 
 export function sharedAlertsAreConfigured() {
@@ -34,6 +47,9 @@ function mapAlert(row: AlertRow): SharedVehicleAlert {
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     reporterName: row.reporter_name ?? "Anonym bruger",
+    notificationEventId: row.notification_event_id ?? undefined,
+    observedAt: row.observed_at ?? undefined,
+    notificationsQueued: Boolean(row.notifications_queued),
   };
 }
 
@@ -78,13 +94,26 @@ export async function createSharedAlert(
 
 export async function matchSharedAlert(
   plate: string,
+  coordinates?: NearbyCoordinates | null,
 ): Promise<SharedVehicleAlert | null> {
   const authenticated = await requireAuthenticatedClient();
-  const { data, error } = await authenticated.rpc("match_plate_alert_v2", {
-    p_plate: plate,
-  });
+  const { data, error } = coordinates
+    ? await authenticated.rpc("match_plate_alert_v3", {
+        p_plate: plate,
+        p_installation_id: coordinates.installationId,
+        p_latitude: coordinates.latitude,
+        p_longitude: coordinates.longitude,
+        p_accuracy_meters: coordinates.accuracyMeters,
+      })
+    : await authenticated.rpc("match_plate_alert_v2", { p_plate: plate });
 
   if (error) throw new Error(mapSupabaseError(error.message));
   const row = (Array.isArray(data) ? data[0] : data) as AlertRow | undefined;
-  return row ? mapAlert(row) : null;
+  if (!row) return null;
+
+  const alert = mapAlert(row);
+  if (alert.notificationEventId && alert.notificationsQueued) {
+    void requestNearbyNotificationDispatch(alert.notificationEventId).catch(() => undefined);
+  }
+  return alert;
 }

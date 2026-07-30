@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   Camera, CarFront, Check, Clock3, Download, ExternalLink, FileSearch, Gauge, Menu, Play,
-  History, RefreshCw, ScanLine, Search, ShieldCheck, TriangleAlert, UserRound,
+  History, MapPin, RefreshCw, ScanLine, Search, ShieldCheck, TriangleAlert, UserRound,
   UsersRound, X,
 } from "lucide-react";
 import { AccountScreen } from "./AccountScreen";
@@ -35,6 +35,13 @@ import {
   sharedAlertsAreConfigured,
   type SharedVehicleAlert,
 } from "./shared-alerts";
+import {
+  formatNearbyDistance,
+  getNearbyMatchCoordinates,
+  initializeNearbyNotificationListeners,
+  refreshNearbyDevice,
+  type NearbyCoordinates,
+} from "./nearby-alerts";
 import "./styles.css";
 
 type InstallPromptEvent = Event & {
@@ -128,7 +135,8 @@ function formatCheckedAt(value: string) {
 
 function formatRelativeTime(value: string) {
   const elapsed = Math.max(0, Date.now() - Date.parse(value));
-  const minutes = Math.max(1, Math.floor(elapsed / 60_000));
+  if (elapsed < 60_000) return "lige nu";
+  const minutes = Math.floor(elapsed / 60_000);
   if (minutes < 60) return `for ${minutes} min. siden`;
   const hours = Math.floor(minutes / 60);
   return `for ${hours} ${hours === 1 ? "time" : "timer"} siden`;
@@ -162,8 +170,11 @@ async function lookupVehicle(plate: string): Promise<Lookup> {
   return payload.data;
 }
 
-async function matchVehicleAlert(plate: string): Promise<VehicleAlert | null> {
-  if (sharedAlertsAreConfigured()) return matchSharedAlert(plate);
+async function matchVehicleAlert(
+  plate: string,
+  coordinates?: NearbyCoordinates | null,
+): Promise<VehicleAlert | null> {
+  if (sharedAlertsAreConfigured()) return matchSharedAlert(plate, coordinates);
 
   const response = await fetch(
     apiUrl(`/api/alerts/match/${encodeURIComponent(normalizePlate(plate))}`),
@@ -308,6 +319,43 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let removeNearbyListeners: () => void = () => undefined;
+    let cancelled = false;
+
+    void initializeNearbyNotificationListeners((notification) => {
+      if (cancelled) return;
+      setMatchedAlert({
+        id: notification.eventId,
+        plate: notification.plate,
+        description: notification.description,
+        createdAt: notification.observedAt,
+        expiresAt: new Date(Date.parse(notification.observedAt) + 60 * 60_000).toISOString(),
+        reporterName: "Fælles match",
+        notificationEventId: notification.eventId,
+        observedAt: notification.observedAt,
+        nearbyDistanceMeters: notification.distanceMeters,
+        approximateLatitude: notification.approximateLatitude,
+        approximateLongitude: notification.approximateLongitude,
+      });
+      setActiveView("scanner");
+      navigator.vibrate?.([350, 120, 350, 120, 500]);
+    }).then((remove) => {
+      if (cancelled) remove();
+      else removeNearbyListeners = remove;
+    });
+    void refreshNearbyDevice();
+    const refreshTimer = window.setInterval(() => {
+      void refreshNearbyDevice();
+    }, 10 * 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      removeNearbyListeners();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!cameraOn) {
       setScannerStatus("Eksempelvisning");
       plateEvidenceRef.current = null;
@@ -392,7 +440,8 @@ function App() {
           const recent = lastMatchCheck.current;
           if (recent.plate !== candidate.plate || now - recent.checkedAt > 15_000) {
             lastMatchCheck.current = { plate: candidate.plate, checkedAt: now };
-            const alert = await matchVehicleAlert(candidate.plate);
+            const coordinates = await getNearbyMatchCoordinates();
+            const alert = await matchVehicleAlert(candidate.plate, coordinates);
             if (alert && !cancelled) {
               setMatchedAlert(alert);
               navigator.vibrate?.([350, 120, 350, 120, 500]);
@@ -700,13 +749,31 @@ function App() {
         <div className="match-backdrop" role="presentation">
           <section className="match-dialog" role="alertdialog" aria-modal="true" aria-labelledby="match-title">
             <div className="match-icon"><TriangleAlert /></div>
-            <h2 id="match-title">ADVARSEL · MATCH FUNDET</h2>
+            <h2 id="match-title">
+              {matchedAlert.nearbyDistanceMeters !== undefined
+                ? "OBS – OSTEN LUGTER I NÆRHEDEN AF DIG"
+                : "ADVARSEL · MATCH FUNDET"}
+            </h2>
             <div className="match-plate">{displayPlate(matchedAlert.plate)}</div>
             <div className="match-copy">
               <strong>Brugerobservation</strong>
               <p>{matchedAlert.description}</p>
-              <span className="match-reporter">Indsendt af {matchedAlert.reporterName}</span>
-              <time>Oprettet {formatRelativeTime(matchedAlert.createdAt)}</time>
+              {matchedAlert.nearbyDistanceMeters !== undefined &&
+                <div className="nearby-match-meta">
+                  <span><MapPin /> Ca. {formatNearbyDistance(matchedAlert.nearbyDistanceMeters)} væk</span>
+                  {matchedAlert.approximateLatitude !== undefined &&
+                    matchedAlert.approximateLongitude !== undefined &&
+                    <span>
+                      Område {matchedAlert.approximateLatitude.toFixed(3)},{" "}
+                      {matchedAlert.approximateLongitude.toFixed(3)}
+                    </span>}
+                </div>}
+              {matchedAlert.nearbyDistanceMeters === undefined &&
+                <span className="match-reporter">Indsendt af {matchedAlert.reporterName}</span>}
+              <time>
+                {matchedAlert.nearbyDistanceMeters !== undefined ? "Registreret" : "Oprettet"}{" "}
+                {formatRelativeTime(matchedAlert.observedAt ?? matchedAlert.createdAt)}
+              </time>
             </div>
             <button onClick={() => setMatchedAlert(null)}>FORSTÅET</button>
             <small>

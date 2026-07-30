@@ -3,6 +3,7 @@ begin;
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
 grant usage on schema private to authenticated;
+grant usage on schema private to service_role;
 
 -- Supabases automatiske RLS-hjælper bruges af et internt event-trigger.
 -- Klientroller skal ikke kunne kalde SECURITY DEFINER-funktionen direkte.
@@ -201,6 +202,149 @@ create table if not exists private.plate_match_rate_limits (
 
 alter table private.plate_match_rate_limits enable row level security;
 revoke all on table private.plate_match_rate_limits from public, anon, authenticated;
+
+create table if not exists private.nearby_devices (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  installation_id uuid not null,
+  push_token text,
+  notifications_enabled boolean not null default false,
+  last_latitude double precision,
+  last_longitude double precision,
+  location_accuracy_meters double precision,
+  location_updated_at timestamptz,
+  token_updated_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, installation_id),
+  constraint nearby_devices_token_length
+    check (push_token is null or pg_catalog.char_length(push_token) between 20 and 4096),
+  constraint nearby_devices_latitude
+    check (last_latitude is null or last_latitude between -90 and 90),
+  constraint nearby_devices_longitude
+    check (last_longitude is null or last_longitude between -180 and 180),
+  constraint nearby_devices_accuracy
+    check (
+      location_accuracy_meters is null
+      or location_accuracy_meters between 0 and 10000
+    ),
+  constraint nearby_devices_enabled_data
+    check (
+      notifications_enabled = false
+      or (
+        push_token is not null
+        and last_latitude is not null
+        and last_longitude is not null
+        and location_updated_at is not null
+      )
+    )
+);
+
+create unique index if not exists nearby_devices_push_token_unique
+  on private.nearby_devices (push_token)
+  where push_token is not null;
+
+create index if not exists nearby_devices_active_location_idx
+  on private.nearby_devices (location_updated_at desc)
+  where notifications_enabled = true;
+
+alter table private.nearby_devices enable row level security;
+revoke all on table private.nearby_devices from public, anon, authenticated;
+
+create table if not exists private.nearby_match_events (
+  id uuid primary key default gen_random_uuid(),
+  alert_id uuid not null references public.plate_alerts(id) on delete cascade,
+  plate text not null,
+  matched_by uuid not null references auth.users(id) on delete cascade,
+  exact_latitude double precision not null,
+  exact_longitude double precision not null,
+  location_accuracy_meters double precision not null,
+  observed_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '1 hour'),
+  constraint nearby_match_events_plate_format
+    check (plate ~ '^[A-ZÆØÅ]{2}[0-9]{5}$'),
+  constraint nearby_match_events_latitude
+    check (exact_latitude between -90 and 90),
+  constraint nearby_match_events_longitude
+    check (exact_longitude between -180 and 180),
+  constraint nearby_match_events_accuracy
+    check (location_accuracy_meters between 0 and 10000),
+  constraint nearby_match_events_expiry
+    check (expires_at > observed_at and expires_at <= observed_at + interval '2 hours')
+);
+
+create index if not exists nearby_match_events_dedup_idx
+  on private.nearby_match_events (alert_id, observed_at desc);
+
+alter table private.nearby_match_events enable row level security;
+revoke all on table private.nearby_match_events from public, anon, authenticated;
+
+create table if not exists private.nearby_notification_queue (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references private.nearby_match_events(id) on delete cascade,
+  recipient_user_id uuid not null references auth.users(id) on delete cascade,
+  recipient_installation_id uuid not null,
+  push_token text not null,
+  distance_meters integer not null check (distance_meters between 0 and 5000),
+  status text not null default 'queued'
+    check (status in ('queued', 'processing', 'sent', 'failed')),
+  attempts integer not null default 0 check (attempts between 0 and 5),
+  claimed_at timestamptz,
+  sent_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  unique (event_id, recipient_user_id, recipient_installation_id),
+  constraint nearby_notification_queue_token_length
+    check (pg_catalog.char_length(push_token) between 20 and 4096)
+);
+
+create index if not exists nearby_notification_queue_claim_idx
+  on private.nearby_notification_queue (event_id, status, created_at);
+
+alter table private.nearby_notification_queue enable row level security;
+revoke all on table private.nearby_notification_queue from public, anon, authenticated;
+
+create or replace function private.distance_meters(
+  p_latitude_a double precision,
+  p_longitude_a double precision,
+  p_latitude_b double precision,
+  p_longitude_b double precision
+)
+returns double precision
+language sql
+immutable
+strict
+set search_path = ''
+as $$
+  select
+    2.0 * 6371000.0 * pg_catalog.asin(
+      least(
+        1.0::double precision,
+        pg_catalog.sqrt(
+          pg_catalog.power(
+            pg_catalog.sin(
+              pg_catalog.radians(p_latitude_b - p_latitude_a) / 2.0
+            ),
+            2.0
+          )
+          + pg_catalog.cos(pg_catalog.radians(p_latitude_a))
+          * pg_catalog.cos(pg_catalog.radians(p_latitude_b))
+          * pg_catalog.power(
+            pg_catalog.sin(
+              pg_catalog.radians(p_longitude_b - p_longitude_a) / 2.0
+            ),
+            2.0
+          )
+        )
+      )
+    );
+$$;
+
+revoke all on function private.distance_meters(
+  double precision,
+  double precision,
+  double precision,
+  double precision
+) from public, anon, authenticated;
 
 create or replace function private.get_my_profile_internal()
 returns table (
@@ -562,6 +706,488 @@ revoke all on function private.match_plate_alert_v2_internal(text)
 grant execute on function private.match_plate_alert_v2_internal(text)
   to authenticated;
 
+create or replace function private.set_nearby_device_internal(
+  p_installation_id uuid,
+  p_push_token text,
+  p_enabled boolean,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy_meters double precision
+)
+returns table (
+  enabled boolean,
+  location_updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_status text;
+  v_token text := nullif(pg_catalog.btrim(coalesce(p_push_token, '')), '');
+begin
+  if v_user_id is null then
+    raise exception 'AUTH_REQUIRED' using errcode = '42501';
+  end if;
+
+  if p_installation_id is null then
+    raise exception 'INVALID_INSTALLATION' using errcode = '22023';
+  end if;
+
+  select moderation.status
+  into v_status
+  from private.account_moderation as moderation
+  where moderation.user_id = v_user_id;
+
+  if coalesce(v_status, 'suspended') <> 'active' then
+    raise exception 'ACCOUNT_SUSPENDED' using errcode = '42501';
+  end if;
+
+  if coalesce(p_enabled, false) = false then
+    insert into private.nearby_devices (
+      user_id,
+      installation_id,
+      notifications_enabled
+    )
+    values (v_user_id, p_installation_id, false)
+    on conflict (user_id, installation_id) do update
+    set
+      push_token = null,
+      notifications_enabled = false,
+      last_latitude = null,
+      last_longitude = null,
+      location_accuracy_meters = null,
+      location_updated_at = null,
+      token_updated_at = null,
+      updated_at = now();
+
+    return query select false, null::timestamptz;
+    return;
+  end if;
+
+  if v_token is null or pg_catalog.char_length(v_token) not between 20 and 4096 then
+    raise exception 'INVALID_PUSH_TOKEN' using errcode = '22023';
+  end if;
+
+  if p_latitude is null or p_latitude not between -90 and 90
+    or p_longitude is null or p_longitude not between -180 and 180
+    or p_accuracy_meters is null or p_accuracy_meters not between 0 and 10000
+  then
+    raise exception 'INVALID_LOCATION' using errcode = '22023';
+  end if;
+
+  delete from private.nearby_devices as device
+  where device.push_token = v_token
+    and (
+      device.user_id <> v_user_id
+      or device.installation_id <> p_installation_id
+    );
+
+  insert into private.nearby_devices (
+    user_id,
+    installation_id,
+    push_token,
+    notifications_enabled,
+    last_latitude,
+    last_longitude,
+    location_accuracy_meters,
+    location_updated_at,
+    token_updated_at
+  )
+  values (
+    v_user_id,
+    p_installation_id,
+    v_token,
+    true,
+    p_latitude,
+    p_longitude,
+    p_accuracy_meters,
+    now(),
+    now()
+  )
+  on conflict (user_id, installation_id) do update
+  set
+    push_token = excluded.push_token,
+    notifications_enabled = true,
+    last_latitude = excluded.last_latitude,
+    last_longitude = excluded.last_longitude,
+    location_accuracy_meters = excluded.location_accuracy_meters,
+    location_updated_at = excluded.location_updated_at,
+    token_updated_at = excluded.token_updated_at,
+    updated_at = now();
+
+  update public.user_profiles as profile
+  set last_active_at = now()
+  where profile.user_id = v_user_id;
+
+  return query select true, now();
+end;
+$$;
+
+revoke all on function private.set_nearby_device_internal(
+  uuid,
+  text,
+  boolean,
+  double precision,
+  double precision,
+  double precision
+) from public, anon, authenticated;
+grant execute on function private.set_nearby_device_internal(
+  uuid,
+  text,
+  boolean,
+  double precision,
+  double precision,
+  double precision
+) to authenticated;
+
+create or replace function private.get_nearby_device_internal(
+  p_installation_id uuid
+)
+returns table (
+  enabled boolean,
+  location_updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception 'AUTH_REQUIRED' using errcode = '42501';
+  end if;
+
+  return query
+    select
+      device.notifications_enabled,
+      device.location_updated_at
+    from private.nearby_devices as device
+    where device.user_id = v_user_id
+      and device.installation_id = p_installation_id
+    limit 1;
+end;
+$$;
+
+revoke all on function private.get_nearby_device_internal(uuid)
+  from public, anon, authenticated;
+grant execute on function private.get_nearby_device_internal(uuid)
+  to authenticated;
+
+create or replace function private.match_plate_alert_v3_internal(
+  p_plate text,
+  p_installation_id uuid,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy_meters double precision
+)
+returns table (
+  id uuid,
+  plate text,
+  description text,
+  created_at timestamptz,
+  expires_at timestamptz,
+  reporter_name text,
+  notification_event_id uuid,
+  observed_at timestamptz,
+  notifications_queued boolean
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_match record;
+  v_existing_event private.nearby_match_events%rowtype;
+  v_event private.nearby_match_events%rowtype;
+  v_queue_count integer := 0;
+begin
+  select *
+  into v_match
+  from private.match_plate_alert_v2_internal(p_plate)
+  limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  if p_installation_id is null
+    or p_latitude is null or p_latitude not between -90 and 90
+    or p_longitude is null or p_longitude not between -180 and 180
+    or p_accuracy_meters is null or p_accuracy_meters not between 0 and 10000
+    or not exists (
+      select 1
+      from private.nearby_devices as sender_device
+      where sender_device.user_id = v_user_id
+        and sender_device.installation_id = p_installation_id
+        and sender_device.notifications_enabled = true
+    )
+  then
+    return query
+      select
+        v_match.id,
+        v_match.plate,
+        v_match.description,
+        v_match.created_at,
+        v_match.expires_at,
+        v_match.reporter_name,
+        null::uuid,
+        null::timestamptz,
+        false;
+    return;
+  end if;
+
+  update private.nearby_devices as sender_device
+  set
+    last_latitude = p_latitude,
+    last_longitude = p_longitude,
+    location_accuracy_meters = p_accuracy_meters,
+    location_updated_at = now(),
+    updated_at = now()
+  where sender_device.user_id = v_user_id
+    and sender_device.installation_id = p_installation_id;
+
+  delete from private.nearby_match_events as expired_event
+  where expired_event.expires_at <= now();
+
+  select event.*
+  into v_existing_event
+  from private.nearby_match_events as event
+  where event.alert_id = v_match.id
+    and event.observed_at >= now() - interval '15 minutes'
+    and private.distance_meters(
+      event.exact_latitude,
+      event.exact_longitude,
+      p_latitude,
+      p_longitude
+    ) <= 250
+  order by event.observed_at desc
+  limit 1;
+
+  if found then
+    return query
+      select
+        v_match.id,
+        v_match.plate,
+        v_match.description,
+        v_match.created_at,
+        v_match.expires_at,
+        v_match.reporter_name,
+        v_existing_event.id,
+        v_existing_event.observed_at,
+        false;
+    return;
+  end if;
+
+  insert into private.nearby_match_events (
+    alert_id,
+    plate,
+    matched_by,
+    exact_latitude,
+    exact_longitude,
+    location_accuracy_meters
+  )
+  values (
+    v_match.id,
+    v_match.plate,
+    v_user_id,
+    p_latitude,
+    p_longitude,
+    p_accuracy_meters
+  )
+  returning * into v_event;
+
+  insert into private.nearby_notification_queue (
+    event_id,
+    recipient_user_id,
+    recipient_installation_id,
+    push_token,
+    distance_meters
+  )
+  select
+    v_event.id,
+    recipient.user_id,
+    recipient.installation_id,
+    recipient.push_token,
+    pg_catalog.round(distance.value)::integer
+  from private.nearby_devices as recipient
+  join private.account_moderation as moderation
+    on moderation.user_id = recipient.user_id
+  cross join lateral (
+    select private.distance_meters(
+      v_event.exact_latitude,
+      v_event.exact_longitude,
+      recipient.last_latitude,
+      recipient.last_longitude
+    ) as value
+  ) as distance
+  where recipient.notifications_enabled = true
+    and recipient.push_token is not null
+    and recipient.last_latitude is not null
+    and recipient.last_longitude is not null
+    and recipient.location_updated_at >= now() - interval '30 minutes'
+    and recipient.user_id <> v_user_id
+    and moderation.status = 'active'
+    and distance.value <= 5000
+  on conflict (event_id, recipient_user_id, recipient_installation_id) do nothing;
+
+  get diagnostics v_queue_count = row_count;
+
+  return query
+    select
+      v_match.id,
+      v_match.plate,
+      v_match.description,
+      v_match.created_at,
+      v_match.expires_at,
+      v_match.reporter_name,
+      v_event.id,
+      v_event.observed_at,
+      v_queue_count > 0;
+end;
+$$;
+
+revoke all on function private.match_plate_alert_v3_internal(
+  text,
+  uuid,
+  double precision,
+  double precision,
+  double precision
+) from public, anon, authenticated;
+grant execute on function private.match_plate_alert_v3_internal(
+  text,
+  uuid,
+  double precision,
+  double precision,
+  double precision
+) to authenticated;
+
+create or replace function private.claim_nearby_notification_batch_internal(
+  p_event_id uuid,
+  p_requesting_user_id uuid,
+  p_limit integer default 100
+)
+returns table (
+  queue_id uuid,
+  push_token text,
+  plate text,
+  description text,
+  observed_at timestamptz,
+  distance_meters integer,
+  approximate_latitude numeric,
+  approximate_longitude numeric
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if p_event_id is null or p_requesting_user_id is null or not exists (
+    select 1
+    from private.nearby_match_events as event
+    where event.id = p_event_id
+      and event.matched_by = p_requesting_user_id
+      and event.expires_at > now()
+  ) then
+    raise exception 'EVENT_NOT_FOUND' using errcode = '42501';
+  end if;
+
+  return query
+    with claimable as (
+      select queue.id
+      from private.nearby_notification_queue as queue
+      where queue.event_id = p_event_id
+        and (
+          queue.status = 'queued'
+          or (
+            queue.status = 'processing'
+            and queue.claimed_at < now() - interval '5 minutes'
+          )
+        )
+        and queue.attempts < 5
+      order by queue.created_at
+      for update skip locked
+      limit greatest(1, least(coalesce(p_limit, 100), 250))
+    ),
+    claimed as (
+      update private.nearby_notification_queue as queue
+      set
+        status = 'processing',
+        attempts = queue.attempts + 1,
+        claimed_at = now(),
+        last_error = null
+      from claimable
+      where queue.id = claimable.id
+      returning
+        queue.id,
+        queue.event_id,
+        queue.push_token,
+        queue.distance_meters
+    )
+    select
+      claimed.id,
+      claimed.push_token,
+      event.plate,
+      alert.description,
+      event.observed_at,
+      claimed.distance_meters,
+      pg_catalog.round(event.exact_latitude::numeric, 3),
+      pg_catalog.round(event.exact_longitude::numeric, 3)
+    from claimed
+    join private.nearby_match_events as event on event.id = claimed.event_id
+    join public.plate_alerts as alert on alert.id = event.alert_id;
+end;
+$$;
+
+revoke all on function private.claim_nearby_notification_batch_internal(
+  uuid,
+  uuid,
+  integer
+) from public, anon, authenticated;
+grant execute on function private.claim_nearby_notification_batch_internal(
+  uuid,
+  uuid,
+  integer
+) to service_role;
+
+create or replace function private.complete_nearby_notification_internal(
+  p_queue_id uuid,
+  p_sent boolean,
+  p_error text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update private.nearby_notification_queue as queue
+  set
+    status = case when coalesce(p_sent, false) then 'sent' else 'failed' end,
+    sent_at = case when coalesce(p_sent, false) then now() else null end,
+    last_error = case
+      when coalesce(p_sent, false) then null
+      else pg_catalog.left(coalesce(p_error, 'Ukendt push-fejl'), 500)
+    end
+  where queue.id = p_queue_id
+    and queue.status = 'processing';
+end;
+$$;
+
+revoke all on function private.complete_nearby_notification_internal(
+  uuid,
+  boolean,
+  text
+) from public, anon, authenticated;
+grant execute on function private.complete_nearby_notification_internal(
+  uuid,
+  boolean,
+  text
+) to service_role;
+
 create or replace function private.admin_list_users_internal(
   p_search text default '',
   p_status text default 'all',
@@ -630,8 +1256,8 @@ begin
         or pg_catalog.lower(auth_user.id::text) like '%' || v_search || '%'
       )
     order by profile.last_active_at desc, auth_user.created_at desc
-    limit pg_catalog.greatest(1, pg_catalog.least(coalesce(p_limit, 50), 100))
-    offset pg_catalog.greatest(coalesce(p_offset, 0), 0);
+    limit greatest(1, least(coalesce(p_limit, 50), 100))
+    offset greatest(coalesce(p_offset, 0), 0);
 end;
 $$;
 
@@ -847,6 +1473,183 @@ revoke all on function public.match_plate_alert_v2(text)
   from public, anon, authenticated;
 grant execute on function public.match_plate_alert_v2(text)
   to authenticated;
+
+create or replace function public.set_nearby_device(
+  p_installation_id uuid,
+  p_push_token text,
+  p_enabled boolean,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy_meters double precision
+)
+returns table (
+  enabled boolean,
+  location_updated_at timestamptz
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select *
+  from private.set_nearby_device_internal(
+    p_installation_id,
+    p_push_token,
+    p_enabled,
+    p_latitude,
+    p_longitude,
+    p_accuracy_meters
+  );
+$$;
+
+revoke all on function public.set_nearby_device(
+  uuid,
+  text,
+  boolean,
+  double precision,
+  double precision,
+  double precision
+) from public, anon, authenticated;
+grant execute on function public.set_nearby_device(
+  uuid,
+  text,
+  boolean,
+  double precision,
+  double precision,
+  double precision
+) to authenticated;
+
+create or replace function public.get_nearby_device(
+  p_installation_id uuid
+)
+returns table (
+  enabled boolean,
+  location_updated_at timestamptz
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select *
+  from private.get_nearby_device_internal(p_installation_id);
+$$;
+
+revoke all on function public.get_nearby_device(uuid)
+  from public, anon, authenticated;
+grant execute on function public.get_nearby_device(uuid)
+  to authenticated;
+
+create or replace function public.match_plate_alert_v3(
+  p_plate text,
+  p_installation_id uuid,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy_meters double precision
+)
+returns table (
+  id uuid,
+  plate text,
+  description text,
+  created_at timestamptz,
+  expires_at timestamptz,
+  reporter_name text,
+  notification_event_id uuid,
+  observed_at timestamptz,
+  notifications_queued boolean
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select *
+  from private.match_plate_alert_v3_internal(
+    p_plate,
+    p_installation_id,
+    p_latitude,
+    p_longitude,
+    p_accuracy_meters
+  );
+$$;
+
+revoke all on function public.match_plate_alert_v3(
+  text,
+  uuid,
+  double precision,
+  double precision,
+  double precision
+) from public, anon, authenticated;
+grant execute on function public.match_plate_alert_v3(
+  text,
+  uuid,
+  double precision,
+  double precision,
+  double precision
+) to authenticated;
+
+create or replace function public.claim_nearby_notification_batch(
+  p_event_id uuid,
+  p_requesting_user_id uuid,
+  p_limit integer default 100
+)
+returns table (
+  queue_id uuid,
+  push_token text,
+  plate text,
+  description text,
+  observed_at timestamptz,
+  distance_meters integer,
+  approximate_latitude numeric,
+  approximate_longitude numeric
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select *
+  from private.claim_nearby_notification_batch_internal(
+    p_event_id,
+    p_requesting_user_id,
+    p_limit
+  );
+$$;
+
+revoke all on function public.claim_nearby_notification_batch(
+  uuid,
+  uuid,
+  integer
+) from public, anon, authenticated;
+grant execute on function public.claim_nearby_notification_batch(
+  uuid,
+  uuid,
+  integer
+) to service_role;
+
+create or replace function public.complete_nearby_notification(
+  p_queue_id uuid,
+  p_sent boolean,
+  p_error text default null
+)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.complete_nearby_notification_internal(
+    p_queue_id,
+    p_sent,
+    p_error
+  );
+$$;
+
+revoke all on function public.complete_nearby_notification(
+  uuid,
+  boolean,
+  text
+) from public, anon, authenticated;
+grant execute on function public.complete_nearby_notification(
+  uuid,
+  boolean,
+  text
+) to service_role;
 
 create or replace function public.admin_list_users(
   p_search text default '',

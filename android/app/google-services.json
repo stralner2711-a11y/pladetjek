@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "320606342826",
+    "project_id": "pladetjek-e1360",
+    "storage_bucket": "pladetjek-e1360.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:320606342826:android:ed082183c322462c3b4ad3",
+        "android_client_info": {
+          "package_name": "dk.pladetjek.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArEFGDgJkaYmXtFZdLpVTF1LC-Q3szmtg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

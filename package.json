@@ -1,7 +1,7 @@
 {
   "name": "pladetjek",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -27,6 +27,8 @@
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "^8.4.2",
+    "@capacitor/geolocation": "8.2.0",
+    "@capacitor/push-notifications": "8.1.2",
     "@supabase/supabase-js": "2.111.0",
     "@vitejs/plugin-react": "^4.3.4",
     "express": "^5.1.0",

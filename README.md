@@ -29,6 +29,18 @@ det separate Supabase-projekt `Pladetjek` (`uolrwogzfegrdjbjvsvu`). Klienterne
 kan ikke hente hele listen over aktive advarsler; RLS og to snævre RPC-kald
 tillader kun oprettelse og et præcist match på den aktivt scannede nummerplade.
 
+### OBS-match i nærheden
+
+Android-brugere kan frivilligt aktivere lokation og pushnotifikationer under
+**Profil**. Når scanneren finder et præcist match, får andre tilmeldte telefoner
+med en højst 30 minutter gammel position inden for 5 km pushbeskeden
+**“OBS – osten lugter i nærheden af dig”**.
+
+Præcise positioner og push-tokens ligger kun i Supabases private skema og kan
+ikke læses af appklienter. Modtageren får kun en afrundet afstand, tidspunktet
+for matchet og et område afrundet til cirka 100–200 meter. Afsenderen modtager
+ikke sin egen pushbesked, og gentagne match samme sted dæmpes i 15 minutter.
+
 ## Datakilder
 
 - Køretøjsdata: `GET https://api.nrpla.de/{registreringsnummer}`
@@ -99,6 +111,9 @@ opdateringer og de vigtige regler om versionskode og signeringsnøgle.
 - Andre brugere ser kun det valgte brugernavn eller `Anonym bruger`.
 - E-mail, internt bruger-id, roller og moderation udleveres kun via beskyttede
   creator/admin-funktioner.
+- Nærhedsadvarsler kræver aktivt samtykke. Den seneste præcise position bruges
+  kun privat i radiusberegningen, accepteres højst 30 minutter og slettes ved
+  fravalg; modtageren ser kun afrundede positionsdata.
 - Beskrivelsen må højst være 240 tegn og bør ikke indeholde navne eller andre
   personoplysninger.
 - En dokumenteret slettepolitik bør tilføjes, før løsningen åbnes for en større
