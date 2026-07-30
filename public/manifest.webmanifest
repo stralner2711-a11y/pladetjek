@@ -1,0 +1,21 @@
+{
+  "name": "Pladetjek",
+  "short_name": "Pladetjek",
+  "description": "Nummerpladescanning, køretøjsopslag og matchbaserede brugeradvarsler.",
+  "lang": "da",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#071523",
+  "theme_color": "#071523",
+  "categories": ["utilities"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pladetjek</string>
+    <string name="title_activity_main">Pladetjek</string>
+    <string name="package_name">dk.pladetjek.app</string>
+    <string name="custom_url_scheme">dk.pladetjek.app</string>
+</resources>

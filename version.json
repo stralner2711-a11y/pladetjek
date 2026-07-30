@@ -1,0 +1,15 @@
+{
+  "activeVersion": "1.1.0",
+  "activeVersionCode": 2,
+  "minimumSupportedVersionCode": 1,
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.1.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.1.0",
+  "sha256": "3c3142bde8eb470e78f17a26bd834e22cada331c51035bcb30300d67095a4c61",
+  "changelog": [
+    "Tilføj nummerplade og observationstekst som en matchbaseret advarsel",
+    "Lokal Android-scanning med ML Kit",
+    "Advarslen vises kun ved et aktivt scannermatch"
+  ],
+  "forceUpdate": false,
+  "updatedAt": "2026-07-30"
+}

@@ -1,0 +1,39 @@
+{
+  "name": "pladetjek",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch server/index.ts",
+    "dev:web": "vite --configLoader runner",
+    "preview": "vite preview",
+    "build": "tsc -b && vite build --configLoader runner",
+    "android:add": "cap add android",
+    "android:sync": "npm run build && cap sync android",
+    "android:build": "npm run android:sync && cd android && gradlew.bat assembleDebug --no-daemon",
+    "start": "tsx server/index.ts",
+    "test": "tsx --test server/*.test.ts src/*.test.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.0.5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.1.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "concurrently": "^9.2.0",
+    "tsx": "^4.20.3",
+    "typescript": "~5.6.2"
+  }
+}
