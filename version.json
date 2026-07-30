@@ -1,16 +1,16 @@
 {
-  "activeVersion": "1.9.0",
-  "activeVersionCode": 13,
+  "activeVersion": "1.10.0",
+  "activeVersionCode": 14,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.9.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.9.0",
-  "sha256": "75c82458053899be032a3d05fc02febd63fbe53b36da58bc3c6fc76d36f01b3b",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.10.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.10.0",
+  "sha256": "91d9fcc1ccd5d6f761f08fc143142dec9bba16efcedb251a15b11f62d4296bd2",
   "changelog": [
-    "Tryk på mørke-advarslen for at tænde kameralygten direkte",
-    "Kamerazoom, tryk-for-fokus og bekræftelse af aflæst nummerplade",
-    "Privat lokal scanningshistorik og sikker testtilstand",
-    "Fejlrapportering og sammenlagte observationer med senest set",
-    "Nyt adminpanel med moderationskø, troværdighed og revisionslog"
+    "Dashcam er en frivillig til/fra-funktion ved siden af mobilscanneren",
+    "Forbind automatisk til et valgt dashcam-SSID på Android",
+    "Livefeed via RTSP, HLS, MJPEG eller gentagne JPEG-billeder",
+    "Lokal OCR og offline-notifikationer med lyd og vibration",
+    "Skærmen holdes tændt under aktiv dashcam-scanning"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"
