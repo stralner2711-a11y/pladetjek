@@ -1,8 +1,8 @@
 # PLADETJEK
 
-Kamera- og nummerpladeopslag til danske køretøjer. Browseren håndterer kameraet,
-mens alle registeropslag går gennem den lokale server, så API-tokenet aldrig
-bliver sendt til klienten.
+Kamerabaseret kontrol af danske nummerplader mod et fælles, brugerbaseret
+advarselsregister. Appen viser kun et resultat, når den scannede eller manuelt
+indtastede nummerplade matcher en aktiv advarsel, som en bruger har oprettet.
 
 ## Matchbaserede advarsler
 
@@ -45,21 +45,20 @@ ikke sin egen pushbesked, og gentagne match samme sted dæmpes i 15 minutter.
 Selve match-/pushhændelsen er tidsbegrænset; den gemte nummerpladeadvarsel er
 fortsat aktiv.
 
-## Datakilder
+## Register
 
-- Køretøjsdata: `GET https://api.nrpla.de/{registreringsnummer}`
-- Forsikring/DMR: `GET https://api.nrpla.de/dmr/registration/{registreringsnummer}`
-- Pant og panthaver: `GET https://api.nrpla.de/tinglysning/{stelnummer}`
-- Fallback for pant: `GET https://api.nrpla.de/debt/{vehicle_id}`
+Den første version bruger kun Pladetjeks fælles brugerregister i Supabase.
+Nummerplade.dk, DMR, Bilbogen og andre eksterne køretøjsregistre er ikke en del
+af opslaget.
 
-`nummerplade.dk` har ikke et dokumenteret køretøjs-API. Integrationen bruger
-derfor det dokumenterede Nummerplade API fra `nummerpladeapi.dk`, der stiller
-DMR- og Tinglysningsdata til rådighed.
+Et manuelt registertjek viser et eventuelt match i appen, men udsender ikke en
+nærhedsnotifikation. En 5 km-notifikation kan kun oprettes, når kameraet fysisk
+har genkendt nummerpladen og fundet et præcist match.
 
 ## Lokal kørsel
 
 1. Kopiér `.env.example` til `.env`.
-2. Indsæt en gyldig `NUMMERPLADE_API_TOKEN`.
+2. Kontrollér Supabase-adressen og publishable-nøglen.
 3. Kør `npm install`.
 4. Kør `npm run dev`.
 5. Åbn `http://127.0.0.1:5173`.
@@ -81,9 +80,8 @@ Android-projektet ligger i `android/` og bruger pakkenavnet `dk.pladetjek.app`.
 2. Kør `npm run android:build`.
 3. Installer den færdige `Pladetjek.apk` fra projektets øverste mappe.
 
-Kameraet kører lokalt i Android-appen. Registeropslag kræver en backend, fordi
-API-tokenet ikke må pakkes ind i APK-filen. Debug-APK'en kan åbnes uden backend,
-men viser da, at datakilden mangler.
+Kameraet og tekstgenkendelsen kører lokalt i Android-appen. Kun den genkendte
+nummerplade sendes til det præcise Supabase-matchopslag.
 
 ## Opdateringer
 
@@ -104,12 +102,10 @@ opdateringer og de vigtige regler om versionskode og signeringsnøgle.
 
 ## Datasikkerhed
 
-- API-tokenet må kun ligge på serveren.
-- Debitorers navn, CPR og fødselsdato videresendes ikke til klienten.
-- Kun kreditors navn/CVR og hæftelsens hovedstol vises.
-- Opslag caches kun i hukommelsen i 30 sekunder og skrives ikke til disk.
 - Brugeradvarsler gemmes i Pladetjeks separate Supabase-projekt uden automatisk
   udløb. Den lokale JSON-backend bruges kun som udviklingsfallback.
+- Klienterne kan ikke hente eller gennemse hele nummerpladeregisteret.
+- Et matchopslag returnerer højst én aktiv advarsel for den præcise nummerplade.
 - Hver installation får automatisk sin egen anonyme Supabase-session.
 - En permanent konto bruger et sikkert e-mail-link uden adgangskode.
 - Andre brugere ser kun det valgte brugernavn eller `Anonym bruger`.
@@ -144,6 +140,3 @@ dk.pladetjek.app://login-callback
 
 Supabases indbyggede e-mailtjeneste er egnet til begrænset test. Før mange
 brugere inviteres, bør projektet forbindes til en egen SMTP-udbyder.
-
-Et resultat fra Bilbogen viser en tinglyst hæftelse, ikke nødvendigvis den
-aktuelle restgæld. Kritiske resultater bør efterkontrolleres i Bilbogen.

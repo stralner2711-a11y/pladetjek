@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
-  Camera, CarFront, Check, Clock3, Download, ExternalLink, FileSearch, Gauge, Menu, Play,
+  Camera, Check, Clock3, Download, ExternalLink, Gauge, Menu, Play,
   History, MapPin, RefreshCw, ScanLine, Search, ShieldCheck, TriangleAlert, UserRound,
   UsersRound, X,
 } from "lucide-react";
@@ -51,40 +51,14 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
-type SourceStatus = {
-  name: string;
-  status: "ok" | "partial" | "unavailable";
-  detail: string;
-};
-
-type Lookup = {
-  plate: string;
-  make: string;
-  model: string;
-  version: string | null;
-  kind: string;
-  vin: string;
-  firstRegistration: string | null;
-  registrationStatus: string;
-  insurance: {
-    status: string | null;
-    company: string | null;
-    created: string | null;
-  };
-  liens: {
-    count: number;
-    totalAmount: number | null;
-    currency: "DKK";
-    creditors: Array<{ name: string; cvr: string | null }>;
-    checked: boolean;
-  };
-  sources: SourceStatus[];
-  checkedAt: string;
-};
-
-type LookupError = { code: string; message: string };
-
 type VehicleAlert = SharedVehicleAlert;
+type RegistryCheck = {
+  plate: string;
+  checkedAt: string;
+  alert: VehicleAlert | null;
+};
+
+type RegistryError = { code: string; message: string };
 type ActiveView = "scanner" | "account" | "admin";
 type AlertScanResult = {
   plate: string;
@@ -128,12 +102,6 @@ function displayPlate(value: string) {
   return p.length > 2 ? `${p.slice(0, 2)} ${p.slice(2, 4)} ${p.slice(4)}`.trim() : p;
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "Ikke oplyst";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("da-DK");
-}
-
 function formatCheckedAt(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("da-DK");
@@ -156,24 +124,6 @@ function getClientId() {
     ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   localStorage.setItem(key, created);
   return created;
-}
-
-async function lookupVehicle(plate: string): Promise<Lookup> {
-  const response = await fetch(apiUrl(`/api/vehicles/${encodeURIComponent(normalizePlate(plate))}`), {
-    headers: { Accept: "application/json" },
-  });
-  const payload = await response.json().catch(() => ({})) as {
-    data?: Lookup;
-    code?: string;
-    message?: string;
-  };
-  if (!response.ok || !payload.data) {
-    throw {
-      code: payload.code ?? "LOOKUP_FAILED",
-      message: payload.message ?? "Opslaget kunne ikke gennemføres.",
-    } satisfies LookupError;
-  }
-  return payload.data;
 }
 
 async function matchVehicleAlert(
@@ -226,8 +176,8 @@ function App() {
   const [accountLoading, setAccountLoading] = useState(true);
   const [nearbyOnboardingUserId, setNearbyOnboardingUserId] = useState<string | null>(null);
   const [plate, setPlate] = useState("");
-  const [result, setResult] = useState<Lookup | null>(null);
-  const [error, setError] = useState<LookupError | null>(null);
+  const [result, setResult] = useState<RegistryCheck | null>(null);
+  const [error, setError] = useState<RegistryError | null>(null);
   const [loading, setLoading] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -235,8 +185,7 @@ function App() {
   const [alertScanActive, setAlertScanActive] = useState(false);
   const [alertScanResult, setAlertScanResult] = useState<AlertScanResult | null>(null);
   const [matchedAlert, setMatchedAlert] = useState<VehicleAlert | null>(null);
-  const [sourcesReady, setSourcesReady] = useState<boolean | null>(null);
-  const [history, setHistory] = useState<Lookup[]>([]);
+  const [history, setHistory] = useState<RegistryCheck[]>([]);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(
     () => window.matchMedia("(display-mode: standalone)").matches,
@@ -297,10 +246,6 @@ function App() {
 
     window.addEventListener("beforeinstallprompt", onInstallPrompt);
     window.addEventListener("appinstalled", onInstalled);
-    fetch(apiUrl("/api/health/sources"))
-      .then((response) => response.json())
-      .then((health: { nummerpladeApi?: string }) => setSourcesReady(health.nummerpladeApi === "configured"))
-      .catch(() => setSourcesReady(false));
     if (Capacitor.isNativePlatform() && !updateCheckStarted.current) {
       updateCheckStarted.current = true;
       void checkForAppUpdate(false);
@@ -492,6 +437,17 @@ function App() {
             lastMatchCheck.current = { plate: candidate.plate, checkedAt: now };
             const coordinates = await getNearbyMatchCoordinates();
             const alert = await matchVehicleAlert(candidate.plate, coordinates);
+            if (cancelled) return;
+            const check = {
+              plate: candidate.plate,
+              checkedAt: new Date(now).toISOString(),
+              alert,
+            };
+            setResult(check);
+            setHistory((old) => [
+              check,
+              ...old.filter((item) => item.plate !== check.plate),
+            ].slice(0, 5));
             if (alert && !cancelled) {
               setMatchedAlert(alert);
               navigator.vibrate?.([350, 120, 350, 120, 500]);
@@ -630,20 +586,29 @@ function App() {
     }
   }
 
-  async function runLookup() {
+  async function runRegistryCheck() {
     if (!valid || loading) return;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const found = await lookupVehicle(plate);
-      setResult(found);
-      setHistory((old) => [found, ...old.filter((item) => item.plate !== found.plate)].slice(0, 5));
+      const alert = await matchVehicleAlert(plate, null);
+      const check = {
+        plate: normalizePlate(plate),
+        checkedAt: new Date().toISOString(),
+        alert,
+      };
+      setResult(check);
+      setHistory((old) => [
+        check,
+        ...old.filter((item) => item.plate !== check.plate),
+      ].slice(0, 5));
     } catch (caught) {
-      const sourceError = caught as Partial<LookupError>;
       setError({
-        code: sourceError.code ?? "LOOKUP_FAILED",
-        message: sourceError.message ?? "Opslaget kunne ikke gennemføres.",
+        code: "REGISTRY_CHECK_FAILED",
+        message: caught instanceof Error
+          ? caught.message
+          : "Brugerregisteret kunne ikke kontrolleres.",
       });
     } finally {
       setLoading(false);
@@ -666,7 +631,7 @@ function App() {
           <button className="nav-item" onClick={() => {
             navigateTo("scanner");
             window.setTimeout(() => document.getElementById("seneste-scanninger")?.scrollIntoView({ behavior: "smooth" }), 250);
-          }}><CarFront /><span>Køretøjer</span></button>
+          }}><History /><span>Historik</span></button>
           <button
             className="nav-item"
             onClick={() => {
@@ -700,8 +665,8 @@ function App() {
               <button className="install-button" onClick={installApp}>
                 <Download /> Installér app
               </button>}
-            <span className={`online-dot ${sourcesReady === false ? "offline-dot" : ""}`} />
-            {sourcesReady === null ? "Kontrollerer kilder" : sourcesReady ? "Kilder tilsluttet" : "API mangler"}
+            <span className={`online-dot ${sharedAlertsAreConfigured() ? "" : "offline-dot"}`} />
+            {sharedAlertsAreConfigured() ? "Fælles brugerregister" : "Register mangler"}
             <span className="divider" /><Clock3 />
             {new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}
           </div>
@@ -735,21 +700,21 @@ function App() {
             </div>
             {cameraError && <p className="camera-error">{cameraError}</p>}
             <div className="manual">
-              <label htmlFor="plate">Manuel indtastning</label>
+              <label htmlFor="plate">Manuelt registertjek</label>
               <div className="lookup-row">
                 <input
                   id="plate"
                   placeholder="AB 12 345"
                   value={plate}
                   onChange={(event) => setPlate(displayPlate(event.target.value))}
-                  onKeyDown={(event) => event.key === "Enter" && runLookup()}
+                  onKeyDown={(event) => event.key === "Enter" && runRegistryCheck()}
                   aria-invalid={plate.length > 0 && !valid}
                   autoCapitalize="characters"
                   autoComplete="off"
                 />
-                <button className="primary" disabled={!valid || loading} onClick={runLookup}>
+                <button className="primary" disabled={!valid || loading} onClick={runRegistryCheck}>
                   {loading ? <span className="spinner" /> : <Search />}
-                  {loading ? "Kontrollerer…" : "Slå nummerplade op"}
+                  {loading ? "Kontrollerer…" : "Tjek brugerregister"}
                 </button>
               </div>
               {!valid && plate.length > 0 && <small>Brug formatet AB 12 345</small>}
@@ -1013,106 +978,87 @@ function Fact({ label, children, tone }: { label: string; children: React.ReactN
   return <div className="fact"><dt>{label}</dt><dd className={tone}>{children}</dd></div>;
 }
 
-function ResultPanel({ result, error, loading }: { result: Lookup | null; error: LookupError | null; loading: boolean }) {
+function ResultPanel({
+  result,
+  error,
+  loading,
+}: {
+  result: RegistryCheck | null;
+  error: RegistryError | null;
+  loading: boolean;
+}) {
   if (loading) {
     return <aside className="result-panel panel empty">
       <div className="large-spinner" />
-      <h2>Kontrollerer registre</h2>
-      <p>Køretøjsdata, DMR-forsikring og Bilbogen hentes…</p>
+      <h2>Kontrollerer brugerregisteret</h2>
+      <p>Søger efter et præcist match på nummerpladen…</p>
     </aside>;
   }
 
   if (error) {
-    const missingToken = error.code === "NOT_CONFIGURED";
     return <aside className="result-panel panel empty">
       <div className="empty-icon warning-icon"><TriangleAlert /></div>
-      <h2>{missingToken ? "Datakilde skal tilsluttes" : "Opslaget mislykkedes"}</h2>
+      <h2>Registertjek mislykkedes</h2>
       <p>{error.message}</p>
-      {missingToken && <a className="source-link" href="https://www.nummerpladeapi.dk/docs" target="_blank" rel="noreferrer">
-        Åbn API-dokumentation <ExternalLink />
-      </a>}
     </aside>;
   }
 
   if (!result) {
     return <aside className="result-panel panel empty">
-      <div className="empty-icon"><FileSearch /></div>
-      <h2>Klar til opslag</h2>
-      <p>Scan en nummerplade, eller indtast den manuelt.</p>
-      <div className="source-summary">Nummerplade API · DMR · Bilbogen</div>
+      <div className="empty-icon"><UsersRound /></div>
+      <h2>Klar til registertjek</h2>
+      <p>Scan en nummerplade, eller indtast den manuelt for at kontrollere brugernes advarsler.</p>
+      <div className="source-summary">Fælles brugerregister · kun præcise match</div>
     </aside>;
   }
 
-  const liensTone = !result.liens.checked ? "warning" : result.liens.count ? "danger" : "success";
-  const liensText = !result.liens.checked
-    ? "Kunne ikke kontrolleres"
-    : result.liens.count
-      ? `${result.liens.count} registreret hæftelse${result.liens.count === 1 ? "" : "r"}`
-      : "Ingen registrerede hæftelser";
-
   return <aside className="result-panel panel">
     <div className="result-inner">
-      <p className="overline">Opslag for</p>
+      <p className="overline">Registertjek for</p>
       <h1>{displayPlate(result.plate)}</h1>
-      <div className="found"><span><Check /></span>Køretøj fundet</div>
-      <dl className="facts">
-        <Fact label="Køretøjstype">{result.kind}</Fact>
-        <Fact label="Mærke / model">{result.make} {result.model} {result.version ?? ""}</Fact>
-        <Fact label="Registreringsstatus">{result.registrationStatus}</Fact>
-        <Fact label="Første registrering">{formatDate(result.firstRegistration)}</Fact>
-      </dl>
-      <section className="result-section">
-        <h2><ShieldCheck /> Forsikring</h2>
-        <dl>
-          <Fact label="Status" tone={result.insurance.status?.toLowerCase() === "aktiv" ? "success" : "warning"}>
-            {result.insurance.status ?? "Ikke tilgængelig"}
-          </Fact>
-          <Fact label="Selskab">{result.insurance.company ?? "Ikke oplyst"}</Fact>
-        </dl>
-      </section>
-      <section className="result-section">
-        <h2><FileSearch /> Pant og hæftelser</h2>
-        <dl>
-          <Fact label="Status" tone={liensTone}>{liensText}</Fact>
-          {result.liens.creditors.map((creditor) =>
-            <Fact label="Panthaver" key={`${creditor.cvr}-${creditor.name}`}>
-              {creditor.name}{creditor.cvr ? ` · CVR ${creditor.cvr}` : ""}
-            </Fact>)}
-          {result.liens.totalAmount !== null &&
-            <Fact label="Hovedstol">{new Intl.NumberFormat("da-DK", { style: "currency", currency: result.liens.currency, maximumFractionDigits: 0 }).format(result.liens.totalAmount)}</Fact>}
-        </dl>
-      </section>
-      <div className="official-links">
-        <a href="https://motorregister.skat.dk/dmr-kerne/koeretoejdetaljer/visKoeretoej" target="_blank" rel="noreferrer">
-          Kontrollér i DMR <ExternalLink />
-        </a>
-        <a href="https://www.tinglysning.dk/" target="_blank" rel="noreferrer">
-          Kontrollér i Bilbogen <ExternalLink />
-        </a>
+      <div className={`found ${result.alert ? "match-found" : ""}`}>
+        <span>{result.alert ? <TriangleAlert /> : <Check />}</span>
+        {result.alert ? "Match i brugerregisteret" : "Ingen advarsel fundet"}
       </div>
+      {result.alert
+        ? <section className="result-section registry-observation">
+            <h2><UsersRound /> Brugerobservation</h2>
+            <p>{result.alert.description}</p>
+            <dl>
+              <Fact label="Indsendt af">{result.alert.reporterName}</Fact>
+              <Fact label="Oprettet">{formatRelativeTime(result.alert.createdAt)}</Fact>
+            </dl>
+            <small>Observationen er indsendt af en bruger og er ikke verificeret registerinformation.</small>
+          </section>
+        : <section className="registry-clear">
+            <ShieldCheck />
+            <div>
+              <h2>Ingen aktiv brugeradvarsel</h2>
+              <p>Resultatet betyder kun, at nummerpladen ikke findes i Pladetjeks fælles brugerregister lige nu.</p>
+            </div>
+          </section>}
     </div>
     <footer className="source">
-      <div><span>Kilder</span>{result.sources.map((source) => source.name).join(" · ")}</div>
-      <div><span>Senest kontrolleret</span>{formatCheckedAt(result.checkedAt)}</div>
+      <div><span>Kilde</span>Fælles brugerregister</div>
+      <div><span>Kontrolleret</span>{formatCheckedAt(result.checkedAt)}</div>
     </footer>
   </aside>;
 }
 
-function Recent({ history }: { history: Lookup[] }) {
+function Recent({ history }: { history: RegistryCheck[] }) {
   return <section className="recent panel" id="seneste-scanninger">
-    <div className="recent-head"><h2>Seneste scanninger</h2><span>{history.length} opslag denne session</span></div>
+    <div className="recent-head"><h2>Seneste registertjek</h2><span>{history.length} tjek denne session</span></div>
     {history.length === 0
-      ? <div className="recent-empty">Dine gennemførte opslag vises her.</div>
+      ? <div className="recent-empty">Dine gennemførte registertjek vises her.</div>
       : <div className="table-wrap"><table>
-        <thead><tr><th>Tidspunkt</th><th>Nummerplade</th><th>Køretøj</th><th>Forsikring</th><th>Pant og hæftelser</th></tr></thead>
+        <thead><tr><th>Tidspunkt</th><th>Nummerplade</th><th>Resultat</th><th>Observation</th></tr></thead>
         <tbody>{history.map((item) => <tr key={item.plate}>
           <td>{formatCheckedAt(item.checkedAt)}</td>
           <td className="plate-cell">{displayPlate(item.plate)}</td>
-          <td>{item.make} {item.model}</td>
-          <td className={item.insurance.status?.toLowerCase() === "aktiv" ? "success" : "warning"}>{item.insurance.status ?? "Ukendt"}</td>
-          <td className={!item.liens.checked ? "warning" : item.liens.count ? "danger" : "success"}>
-            {!item.liens.checked ? "Ikke kontrolleret" : item.liens.count ? `${item.liens.count} hæftelse${item.liens.count === 1 ? "" : "r"}` : "Ingen"}
+          <td className={item.alert ? "danger" : "success"}>
+            {item.alert ? "Match fundet" : "Intet match"}
           </td>
+          <td>{item.alert?.description ?? "Ingen aktiv brugeradvarsel"}</td>
         </tr>)}</tbody>
       </table></div>}
   </section>;

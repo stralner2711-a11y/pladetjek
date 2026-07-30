@@ -3,14 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AlertService } from "./alert-service.js";
-import { lookupViaNummerpladeApi, SourceError, type VehicleLookup } from "./nummerplade-api.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
-const timeoutMs = Number(process.env.NUMMERPLADE_API_TIMEOUT_MS ?? 8000);
-const cacheMs = Number(process.env.NUMMERPLADE_CACHE_SECONDS ?? 30) * 1000;
-const token = process.env.NUMMERPLADE_API_TOKEN;
 const configuredAlertLifetimeMinutes = Number(process.env.ALERT_LIFETIME_MINUTES);
 const alertLifetimeMs =
   Number.isFinite(configuredAlertLifetimeMinutes) && configuredAlertLifetimeMinutes > 0
@@ -18,8 +14,6 @@ const alertLifetimeMs =
     : Number.POSITIVE_INFINITY;
 const alertDataFile = path.resolve(process.env.ALERT_DATA_FILE ?? "data/alerts.json");
 const alerts = new AlertService(alertLifetimeMs, 15 * 60_000, 500, loadStoredAlerts());
-const lookupCache = new Map<string, { expires: number; value: VehicleLookup }>();
-const lookupRate = new Map<string, { reset: number; count: number }>();
 const matchRate = new Map<string, { reset: number; count: number }>();
 const postRate = new Map<string, { reset: number; count: number }>();
 const allowedOrigins = new Set(
@@ -53,49 +47,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
-app.get("/api/health/sources", (_req, res) => {
-  res.json({
-    nummerpladeApi: token ? "configured" : "not_configured",
-    dmr: token ? "via_nummerplade_api" : "not_configured",
-    tinglysning: token ? "via_nummerplade_api" : "not_configured",
-  });
-});
-
-app.get("/api/vehicles/:registration", async (req, res) => {
-  const ip = req.ip ?? "unknown";
-  const now = Date.now();
-  const currentRate = lookupRate.get(ip);
-  if (!currentRate || currentRate.reset < now) {
-    lookupRate.set(ip, { reset: now + 60_000, count: 1 });
-  } else if (++currentRate.count > 60) {
-    return res.status(429).json({
-      code: "RATE_LIMITED",
-      message: "For mange opslag. Prøv igen om lidt.",
-    });
-  }
-
-  const plate = req.params.registration.toUpperCase().replace(/[^A-ZÆØÅ0-9]/g, "");
-  if (!/^[A-ZÆØÅ]{2}\d{5}$/.test(plate)) {
-    return res.status(400).json({ code: "INVALID_PLATE", message: "Ugyldigt registreringsnummer." });
-  }
-
-  const cached = lookupCache.get(plate);
-  if (cached && cached.expires > now) return res.json({ data: cached.value, cached: true });
-
-  try {
-    const value = await lookupViaNummerpladeApi(plate, token, timeoutMs);
-    lookupCache.set(plate, { expires: now + cacheMs, value });
-    return res.json({ data: value, cached: false });
-  } catch (error) {
-    if (error instanceof SourceError) {
-      return res.status(error.status).json({ code: error.code, message: error.message });
-    }
-    console.error("vehicle lookup failed", error instanceof Error ? error.message : error);
-    return res.status(502).json({ code: "UPSTREAM_ERROR", message: "Opslaget kunne ikke gennemføres." });
-  }
+  res.json({ status: "ok", registry: "user_based" });
 });
 
 app.get("/api/alerts/match/:registration", (req, res) => {

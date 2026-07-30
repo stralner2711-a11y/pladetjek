@@ -4,13 +4,10 @@
 @media(max-width:980px){.workspace{grid-template-columns:1fr}.result-panel{min-height:520px}}@media(max-width:680px){.app-shell{display:block}.rail{display:none}main{grid-column:auto}header{height:60px;padding:0 16px}.mobile-menu,.brand-mark{display:block}.brand{font-size:17px}.header-meta .divider,.header-meta svg,.header-meta{font-size:0}.header-meta .online-dot{display:block}.workspace{padding:10px;display:block}.capture-panel{margin-bottom:10px}.camera-stage{aspect-ratio:4/3}.lookup-row{grid-template-columns:1fr}.primary{height:50px}.result-panel{min-height:0}.result-inner{padding:18px}.found{font-size:22px}.source{grid-template-columns:1fr}.recent{margin:0 10px 16px}.recent-head{height:auto;min-height:48px;padding:10px 16px;gap:8px;align-items:flex-start;flex-direction:column}.recent-head span{white-space:nowrap}.fact{grid-template-columns:45% 1fr}.scan-frame{width:52%;left:24%}.recognized{font-size:13px}.camera-controls{font-size:11px}}
 .offline-dot{background:var(--amber)}
 .warning-icon{color:var(--amber);border-color:rgba(255,199,102,.45)}
-.source-link{margin-top:20px;color:#071523;background:var(--cyan);text-decoration:none;padding:10px 14px;border-radius:5px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px}
-.source-link svg,.official-links svg{width:15px;height:15px}
 .source-summary{color:#657e8f;font-size:11px;margin-top:18px}
-.muted-value{color:var(--muted)!important}
-.official-links{border-top:1px solid var(--line);padding-top:14px;display:flex;gap:18px;flex-wrap:wrap}
-.official-links a{color:var(--cyan);font-size:12px;text-decoration:none;display:flex;align-items:center;gap:6px}
-.official-links a:hover,.source-link:hover{text-decoration:underline}
+.found.match-found{color:var(--red)}.found.match-found span{border-color:var(--red)}
+.registry-observation{margin-top:16px}.registry-observation>p{margin:11px 0 4px;padding:13px 14px;border:1px solid rgba(255,107,93,.28);border-radius:7px;background:rgba(255,107,93,.055);font-size:14px;line-height:1.5}.registry-observation>small{display:block;color:var(--muted);font-size:10px;line-height:1.45}
+.registry-clear{margin-top:18px;padding:16px;border:1px solid rgba(103,216,138,.24);border-radius:8px;background:rgba(103,216,138,.045);display:flex;align-items:flex-start;gap:13px}.registry-clear>svg{width:25px;flex:0 0 auto;color:var(--green)}.registry-clear h2{font-size:16px;margin:0 0 4px}.registry-clear p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .install-button{border:1px solid #3f6073;background:#10283a;color:#e5f2f8;border-radius:6px;padding:7px 11px;display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;font-weight:600}
 .install-button:hover{border-color:var(--cyan);color:white}
 .install-button svg{width:15px;height:15px}
