@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
-  Camera, Check, Clock3, Download, ExternalLink, Gauge, Menu, Play,
+  Camera, Check, Clock3, Download, ExternalLink, Flashlight, Gauge, Menu, Play,
   History, MapPin, RefreshCw, ScanLine, Search, ShieldCheck, TriangleAlert, UserRound,
   UsersRound, X,
 } from "lucide-react";
@@ -25,7 +25,9 @@ import {
 import {
   advancePlateEvidence,
   calculateCoverCrop,
+  estimateImageLuminance,
   findBestPlateCandidate,
+  plateCaptureFilter,
   type PlateEvidence,
   type PlateRecognitionResult,
 } from "./plate-recognition";
@@ -63,6 +65,16 @@ type ActiveView = "scanner" | "account" | "admin";
 type AlertScanResult = {
   plate: string;
   capturedAt: number;
+};
+
+type ExtendedCameraCapabilities = MediaTrackCapabilities & {
+  focusMode?: string[];
+  torch?: boolean;
+};
+
+type ExtendedCameraConstraintSet = MediaTrackConstraintSet & {
+  focusMode?: string;
+  torch?: boolean;
 };
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -182,6 +194,9 @@ function App() {
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scannerStatus, setScannerStatus] = useState("Eksempelvisning");
+  const [lowLightDetected, setLowLightDetected] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   const [alertScanActive, setAlertScanActive] = useState(false);
   const [alertScanResult, setAlertScanResult] = useState<AlertScanResult | null>(null);
   const [matchedAlert, setMatchedAlert] = useState<VehicleAlert | null>(null);
@@ -201,6 +216,7 @@ function App() {
   const scanFrameRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lightCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const plateEvidenceRef = useRef<PlateEvidence | null>(null);
   const updateCheckStarted = useRef(false);
   const lastMatchCheck = useRef({ plate: "", checkedAt: 0 });
@@ -212,6 +228,9 @@ function App() {
     streamRef.current = null;
     setCameraOn(false);
     setAlertScanActive(false);
+    setLowLightDetected(false);
+    setTorchSupported(false);
+    setTorchOn(false);
     setScannerStatus("Eksempelvisning");
   }
 
@@ -381,9 +400,34 @@ function App() {
         canvas.height = Math.max(280, Math.round(1280 * crop.height / crop.width));
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("Kamerabilledet kunne ikke behandles.");
+
+        const lightCanvas = lightCanvasRef.current ?? document.createElement("canvas");
+        lightCanvasRef.current = lightCanvas;
+        lightCanvas.width = 96;
+        lightCanvas.height = Math.max(28, Math.round(96 * crop.height / crop.width));
+        const lightContext = lightCanvas.getContext("2d", { alpha: false });
+        if (!lightContext) throw new Error("Lysniveauet kunne ikke måles.");
+        lightContext.drawImage(
+          video,
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
+          0,
+          0,
+          lightCanvas.width,
+          lightCanvas.height,
+        );
+        const luminance = estimateImageLuminance(
+          lightContext.getImageData(0, 0, lightCanvas.width, lightCanvas.height).data,
+          3,
+        );
+        const isLowLight = luminance < 82;
+        setLowLightDetected((current) => current === isLowLight ? current : isLowLight);
+
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = "high";
-        context.filter = "grayscale(1) contrast(1.35)";
+        context.filter = plateCaptureFilter(luminance);
         context.drawImage(
           video,
           crop.x,
@@ -396,7 +440,7 @@ function App() {
           canvas.height,
         );
         context.filter = "none";
-        const imageBase64 = canvas.toDataURL("image/jpeg", 0.86).split(",")[1] ?? "";
+        const imageBase64 = canvas.toDataURL("image/jpeg", 0.92).split(",")[1] ?? "";
         const recognized = await PlateTextRecognizer.recognize({ imageBase64 });
         const candidate = findBestPlateCandidate(recognized);
         const evidenceUpdate = advancePlateEvidence(
@@ -463,7 +507,7 @@ function App() {
       } catch {
         if (!cancelled) setScannerStatus("Placér en nummerplade midt i rammen…");
       } finally {
-        if (!cancelled) timer = window.setTimeout(() => void scanFrame(), 900);
+        if (!cancelled) timer = window.setTimeout(() => void scanFrame(), 700);
       }
     }
 
@@ -552,10 +596,27 @@ function App() {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30, max: 30 },
+        },
         audio: false,
       });
       streamRef.current = stream;
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const capabilities = videoTrack.getCapabilities() as ExtendedCameraCapabilities;
+        setTorchSupported(capabilities.torch === true);
+        if (capabilities.focusMode?.includes("continuous")) {
+          await videoTrack.applyConstraints({
+            advanced: [{
+              focusMode: "continuous",
+            } as ExtendedCameraConstraintSet],
+          }).catch(() => undefined);
+        }
+      }
       if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraOn(true);
       setScannerStatus(
@@ -567,6 +628,23 @@ function App() {
       setAlertScanActive(false);
       setCameraError("Kameraadgang blev afvist. Du kan stadig indtaste pladen manuelt.");
       return false;
+    }
+  }
+
+  async function toggleTorch() {
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+    if (!videoTrack || !torchSupported) return;
+    const next = !torchOn;
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{
+          torch: next,
+        } as ExtendedCameraConstraintSet],
+      });
+      setTorchOn(next);
+      setCameraError("");
+    } catch {
+      setCameraError("Telefonens lygte kunne ikke styres. Brug mere lys omkring nummerpladen.");
     }
   }
 
@@ -686,6 +764,10 @@ function App() {
                 <div className="alert-scan-banner">
                   <TriangleAlert /> Nummerpladen overføres til advarslen efter bekræftelse
                 </div>}
+              {cameraOn && lowLightDetected && !torchOn &&
+                <div className="low-light-hint">
+                  <Flashlight /> Mørkt billede · tænd lygten
+                </div>}
               <div ref={scanFrameRef} className="scan-frame">
                 <span /><span /><span /><span />
               </div>
@@ -693,10 +775,20 @@ function App() {
             </div>
             <div className="camera-controls">
               <span><i /> {scannerStatus}</span>
-              <button onClick={toggleCamera}>
-                {cameraOn ? <X size={16} /> : <Play size={16} />}
-                {alertScanActive ? "Annuller scanning" : cameraOn ? "Stop kamera" : "Start kamera"}
-              </button>
+              <div className="camera-actions">
+                {cameraOn && torchSupported &&
+                  <button
+                    className={`torch-button ${torchOn ? "active" : ""} ${lowLightDetected && !torchOn ? "recommended" : ""}`}
+                    onClick={() => void toggleTorch()}
+                  >
+                    <Flashlight size={16} />
+                    {torchOn ? "Sluk lygte" : "Tænd lygte"}
+                  </button>}
+                <button onClick={toggleCamera}>
+                  {cameraOn ? <X size={16} /> : <Play size={16} />}
+                  {alertScanActive ? "Annuller scanning" : cameraOn ? "Stop kamera" : "Start kamera"}
+                </button>
+              </div>
             </div>
             {cameraError && <p className="camera-error">{cameraError}</p>}
             <div className="manual">

@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   advancePlateEvidence,
   calculateCoverCrop,
+  estimateImageLuminance,
   extractDanishPlate,
   findBestPlateCandidate,
+  plateCaptureFilter,
   type PlateRecognitionResult,
   type RecognizedTextLine,
 } from "./plate-recognition.ts";
@@ -111,6 +113,29 @@ test("kræver gentagelse i flere kamerabilleder før bekræftelse", () => {
   const changed = advancePlateEvidence(second.evidence, other, 2_800);
   assert.equal(changed.confirmed, false);
   assert.equal(changed.evidence?.hits, 1);
+});
+
+test("måler mørke kamerabilleder og vælger kraftigere natbehandling", () => {
+  const darkPixels = new Uint8ClampedArray([
+    18, 18, 18, 255,
+    42, 42, 42, 255,
+    30, 30, 30, 255,
+    26, 26, 26, 255,
+  ]);
+  const daylightPixels = new Uint8ClampedArray([
+    160, 165, 170, 255,
+    190, 195, 200, 255,
+    175, 180, 185, 255,
+    210, 215, 220, 255,
+  ]);
+
+  const darkLuminance = estimateImageLuminance(darkPixels, 1);
+  const daylightLuminance = estimateImageLuminance(daylightPixels, 1);
+
+  assert.ok(darkLuminance < 52);
+  assert.ok(daylightLuminance > 112);
+  assert.match(plateCaptureFilter(darkLuminance), /brightness\(1\.9\)/);
+  assert.equal(plateCaptureFilter(daylightLuminance), "grayscale(1) contrast(1.35)");
 });
 
 test("kortlægger den synlige scanningsramme til videoets objekt-fit-cover", () => {

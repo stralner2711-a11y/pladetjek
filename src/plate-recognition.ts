@@ -254,6 +254,34 @@ export function advancePlateEvidence(
   return { evidence, confirmed: evidence.hits >= evidence.requiredHits };
 }
 
+export function estimateImageLuminance(
+  pixels: Uint8ClampedArray,
+  sampleEveryPixels = 4,
+) {
+  if (pixels.length < 4) return 0;
+  const stride = Math.max(1, Math.floor(sampleEveryPixels)) * 4;
+  let total = 0;
+  let samples = 0;
+
+  for (let index = 0; index + 2 < pixels.length; index += stride) {
+    total += (
+      pixels[index] * 0.2126
+      + pixels[index + 1] * 0.7152
+      + pixels[index + 2] * 0.0722
+    );
+    samples += 1;
+  }
+
+  return samples ? total / samples : 0;
+}
+
+export function plateCaptureFilter(luminance: number) {
+  if (luminance < 52) return "grayscale(1) brightness(1.9) contrast(1.7)";
+  if (luminance < 82) return "grayscale(1) brightness(1.5) contrast(1.55)";
+  if (luminance < 112) return "grayscale(1) brightness(1.2) contrast(1.45)";
+  return "grayscale(1) contrast(1.35)";
+}
+
 export function calculateCoverCrop(
   videoWidth: number,
   videoHeight: number,
