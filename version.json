@@ -1,15 +1,16 @@
 {
-  "activeVersion": "1.7.0",
-  "activeVersionCode": 9,
+  "activeVersion": "1.8.0",
+  "activeVersionCode": 11,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.7.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.7.0",
-  "sha256": "32c7fe3f2b0b116e015fd13e6ee9959aa89c0f12838fd3e67dd15d38164d77ac",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.8.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.8.0",
+  "sha256": "4743b2fa267e616a100d83ce89bc8d73ba8870e64db3a7a0d4545498058bcdd6",
   "changelog": [
-    "Engangsopsætning af 5 km-advarsler ved første login på Android-telefonen",
-    "Brugeren vælger selv mellem at aktivere lokation og notifikationer eller springe over",
-    "Dialogen vises ikke igen efter valget",
-    "Indstillingen kan altid ændres senere under Profil"
+    "Scanner og manuelt opslag bruger nu Pladetjeks fælles brugerregister",
+    "Nummerplade.dk, DMR og Bilbogen er fjernet fra opslaget",
+    "Manuelt registertjek sender ikke nærhedsnotifikationer",
+    "Et præcist kameramatch kan fortsat advare brugere inden for 5 km",
+    "Resultatvisning og historik er gjort tydeligere"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"
