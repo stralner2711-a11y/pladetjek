@@ -1,15 +1,16 @@
 {
-  "activeVersion": "1.3.0",
-  "activeVersionCode": 4,
+  "activeVersion": "1.4.0",
+  "activeVersionCode": 5,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.3.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.3.0",
-  "sha256": "8cadb53b1ecba6d2cb8de420269a04d2b9736a5300e0e63fe4872e7a1d4178c3",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.4.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.4.0",
+  "sha256": "56b3a4b392ebe23501669eac3a1ce089184d109288fdabd7ff31140c540659d6",
   "changelog": [
-    "Kameraet analyserer nu kun området inde i den synlige scanningsramme",
-    "OCR-resultater kontrolleres for pladeformat, placering, størrelse, hældning og sikkerhed",
-    "Samme nummerplade skal genkendes i flere kamerabilleder før den accepteres",
-    "Billedet forbedres lokalt med gråtoner og kontrast før ML Kit-genkendelsen"
+    "Ny privat profil med konto via sikkert e-mail-link uden adgangskode",
+    "Brugere vælger selv synligt brugernavn eller Anonym bruger",
+    "Creator og administratorer får en beskyttet brugeroversigt med e-mail og internt id",
+    "Suspendering og adminroller håndhæves sikkert i Supabase",
+    "Advarselsmatch viser kun afsenderens tilladte offentlige navn"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"

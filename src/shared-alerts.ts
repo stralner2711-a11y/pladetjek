@@ -1,4 +1,7 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  requireAuthenticatedClient,
+  supabaseIsConfigured,
+} from "./supabase-client";
 
 export type SharedVehicleAlert = {
   id: string;
@@ -6,6 +9,7 @@ export type SharedVehicleAlert = {
   description: string;
   createdAt: string;
   expiresAt: string;
+  reporterName: string;
 };
 
 type AlertRow = {
@@ -14,58 +18,12 @@ type AlertRow = {
   description: string;
   created_at: string;
   expires_at: string;
+  reporter_name?: string;
   duplicate?: boolean;
 };
 
-const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-const supabasePublishableKey = String(
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
-).trim();
-
-const client: SupabaseClient | null = supabaseUrl && supabasePublishableKey
-  ? createClient(supabaseUrl, supabasePublishableKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-      },
-      global: {
-        headers: {
-          "X-Client-Info": "pladetjek-android",
-        },
-      },
-    })
-  : null;
-
-let sessionPromise: Promise<SupabaseClient> | null = null;
-
 export function sharedAlertsAreConfigured() {
-  return client !== null;
-}
-
-async function requireAuthenticatedClient() {
-  if (!client) {
-    throw new Error("Den fælles advarselstjeneste er ikke konfigureret.");
-  }
-
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      const { data, error } = await client.auth.getSession();
-      if (error) throw error;
-      if (data.session) return client;
-
-      const signedIn = await client.auth.signInAnonymously();
-      if (signedIn.error || !signedIn.data.session) {
-        throw signedIn.error ?? new Error("Anonym Supabase-session kunne ikke oprettes.");
-      }
-      return client;
-    })().catch((error) => {
-      sessionPromise = null;
-      throw error;
-    });
-  }
-
-  return sessionPromise;
+  return supabaseIsConfigured();
 }
 
 function mapAlert(row: AlertRow): SharedVehicleAlert {
@@ -75,6 +33,7 @@ function mapAlert(row: AlertRow): SharedVehicleAlert {
     description: row.description,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
+    reporterName: row.reporter_name ?? "Anonym bruger",
   };
 }
 
@@ -90,6 +49,9 @@ function mapSupabaseError(message: string) {
   }
   if (message.includes("AUTH_REQUIRED")) {
     return "Telefonen kunne ikke oprette en sikker brugersession.";
+  }
+  if (message.includes("ACCOUNT_SUSPENDED")) {
+    return "Din konto er suspenderet og kan ikke bruge fælles advarsler.";
   }
   return "Den fælles advarselstjeneste kunne ikke kontaktes.";
 }
@@ -118,7 +80,7 @@ export async function matchSharedAlert(
   plate: string,
 ): Promise<SharedVehicleAlert | null> {
   const authenticated = await requireAuthenticatedClient();
-  const { data, error } = await authenticated.rpc("match_plate_alert", {
+  const { data, error } = await authenticated.rpc("match_plate_alert_v2", {
     p_plate: plate,
   });
 

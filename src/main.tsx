@@ -3,8 +3,17 @@ import { createRoot } from "react-dom/client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   Camera, CarFront, Check, Clock3, Download, ExternalLink, FileSearch, Gauge, Menu, Play,
-  RefreshCw, ScanLine, Search, Settings, ShieldCheck, TriangleAlert, X,
+  History, RefreshCw, ScanLine, Search, ShieldCheck, TriangleAlert, UserRound,
+  UsersRound, X,
 } from "lucide-react";
+import { AccountScreen } from "./AccountScreen";
+import { AdminUsersScreen } from "./AdminUsersScreen";
+import {
+  getMyProfile,
+  initializeAuthLinks,
+  subscribeToAuthChanges,
+  type MyProfile,
+} from "./account-service";
 import {
   DEFAULT_MANIFEST_URL,
   DEFAULT_OFFICIAL_REPO,
@@ -67,6 +76,7 @@ type Lookup = {
 type LookupError = { code: string; message: string };
 
 type VehicleAlert = SharedVehicleAlert;
+type ActiveView = "scanner" | "account" | "admin";
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const UPDATE_REPOSITORY_URL = String(
@@ -194,6 +204,9 @@ async function createVehicleAlert(
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<ActiveView>("scanner");
+  const [accountProfile, setAccountProfile] = useState<MyProfile | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
   const [plate, setPlate] = useState("");
   const [result, setResult] = useState<Lookup | null>(null);
   const [error, setError] = useState<LookupError | null>(null);
@@ -225,6 +238,27 @@ function App() {
 
   const valid = /^[A-ZÆØÅ]{2}\s?\d{2}\s?\d{3}$/.test(plate.trim().toUpperCase());
 
+  async function refreshAccount() {
+    setAccountLoading(true);
+    try {
+      setAccountProfile(await getMyProfile());
+    } catch {
+      setAccountProfile(null);
+    } finally {
+      setAccountLoading(false);
+    }
+  }
+
+  function navigateTo(view: ActiveView) {
+    if (view !== "scanner") {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setCameraOn(false);
+    }
+    setActiveView(view);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   useEffect(() => {
     const onInstallPrompt = (event: Event) => {
       event.preventDefault();
@@ -245,7 +279,28 @@ function App() {
       updateCheckStarted.current = true;
       void checkForAppUpdate(false);
     }
+
+    let removeAuthLinkListener: () => void = () => undefined;
+    let cancelled = false;
+    void initializeAuthLinks(async () => {
+      if (cancelled) return;
+      setActiveView("account");
+      await refreshAccount();
+    }).then((remove) => {
+      if (cancelled) remove();
+      else removeAuthLinkListener = remove;
+    });
+    const unsubscribeAuth = subscribeToAuthChanges((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        void refreshAccount();
+      }
+    });
+    void refreshAccount();
+
     return () => {
+      cancelled = true;
+      removeAuthLinkListener();
+      unsubscribeAuth();
       window.removeEventListener("beforeinstallprompt", onInstallPrompt);
       window.removeEventListener("appinstalled", onInstalled);
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -480,16 +535,36 @@ function App() {
       <aside className="rail">
         <div className="rail-brand"><ScanLine size={25} /></div>
         <nav>
-          <button className="nav-item active"><Gauge /><span>Scanning</span></button>
-          <button className="nav-item"><Search /><span>Søgning</span></button>
-          <button className="nav-item"><CarFront /><span>Køretøjer</span></button>
+          <button
+            className={`nav-item ${activeView === "scanner" ? "active" : ""}`}
+            onClick={() => navigateTo("scanner")}
+          ><Gauge /><span>Scanning</span></button>
+          <button className="nav-item" onClick={() => {
+            navigateTo("scanner");
+            window.setTimeout(() => document.getElementById("plate")?.focus(), 250);
+          }}><Search /><span>Søgning</span></button>
+          <button className="nav-item" onClick={() => {
+            navigateTo("scanner");
+            window.setTimeout(() => document.getElementById("seneste-scanninger")?.scrollIntoView({ behavior: "smooth" }), 250);
+          }}><CarFront /><span>Køretøjer</span></button>
           <button
             className="nav-item"
-            onClick={() => document.getElementById("tilfoej-advarsel")?.scrollIntoView({ behavior: "smooth" })}
+            onClick={() => {
+              navigateTo("scanner");
+              window.setTimeout(() => document.getElementById("tilfoej-advarsel")?.scrollIntoView({ behavior: "smooth" }), 250);
+            }}
           >
             <TriangleAlert /><span>Advarsel</span>
           </button>
-          <button className="nav-item"><Settings /><span>Indstillinger</span></button>
+          <button
+            className={`nav-item ${activeView === "account" ? "active" : ""}`}
+            onClick={() => navigateTo("account")}
+          ><UserRound /><span>Profil</span></button>
+          {(accountProfile?.role === "admin" || accountProfile?.role === "creator") &&
+            <button
+              className={`nav-item ${activeView === "admin" ? "active" : ""}`}
+              onClick={() => navigateTo("admin")}
+            ><UsersRound /><span>Brugere</span></button>}
         </nav>
       </aside>
       <main>
@@ -511,6 +586,8 @@ function App() {
             {new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}
           </div>
         </header>
+        {activeView === "scanner" &&
+        <>
         <section className="workspace">
           <div className="capture-panel panel">
             <div className="panel-head">
@@ -555,7 +632,40 @@ function App() {
         </section>
         <Recent history={history} />
         <AlertSection />
+        </>}
+        {activeView === "account" &&
+          <AccountScreen
+            profile={accountProfile}
+            loading={accountLoading}
+            onProfileChange={setAccountProfile}
+            onOpenAdmin={() => navigateTo("admin")}
+          />}
+        {activeView === "admin" && accountProfile &&
+          (accountProfile.role === "admin" || accountProfile.role === "creator")
+          ? <AdminUsersScreen currentProfile={accountProfile} onBack={() => navigateTo("account")} />
+          : activeView === "admin"
+            ? <AccountScreen
+                profile={accountProfile}
+                loading={accountLoading}
+                onProfileChange={setAccountProfile}
+                onOpenAdmin={() => navigateTo("admin")}
+              />
+            : null}
       </main>
+      <nav className="mobile-bottom-nav" aria-label="Primær navigation">
+        <button className={activeView === "scanner" ? "active" : ""} onClick={() => navigateTo("scanner")}>
+          <ScanLine /> Scanner
+        </button>
+        <button onClick={() => {
+          navigateTo("scanner");
+          window.setTimeout(() => document.getElementById("seneste-scanninger")?.scrollIntoView({ behavior: "smooth" }), 250);
+        }}>
+          <History /> Historik
+        </button>
+        <button className={activeView === "account" || activeView === "admin" ? "active" : ""} onClick={() => navigateTo("account")}>
+          <UserRound /> Profil
+        </button>
+      </nav>
       {updateMessage &&
         <button className="update-toast" onClick={() => setUpdateMessage("")} aria-label="Luk besked">
           {updateMessage}<X />
@@ -595,6 +705,7 @@ function App() {
             <div className="match-copy">
               <strong>Brugerobservation</strong>
               <p>{matchedAlert.description}</p>
+              <span className="match-reporter">Indsendt af {matchedAlert.reporterName}</span>
               <time>Oprettet {formatRelativeTime(matchedAlert.createdAt)}</time>
             </div>
             <button onClick={() => setMatchedAlert(null)}>FORSTÅET</button>
@@ -805,7 +916,7 @@ function ResultPanel({ result, error, loading }: { result: Lookup | null; error:
 }
 
 function Recent({ history }: { history: Lookup[] }) {
-  return <section className="recent panel">
+  return <section className="recent panel" id="seneste-scanninger">
     <div className="recent-head"><h2>Seneste scanninger</h2><span>{history.length} opslag denne session</span></div>
     {history.length === 0
       ? <div className="recent-empty">Dine gennemførte opslag vises her.</div>

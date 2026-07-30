@@ -16,6 +16,156 @@ begin
 end;
 $$;
 
+create table if not exists public.user_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  username text,
+  hide_from_peers boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_active_at timestamptz not null default now(),
+  constraint user_profiles_username_format
+    check (
+      username is null
+      or (
+        pg_catalog.char_length(username) between 3 and 24
+        and username ~ '^[A-Za-zÆØÅæøå0-9_]+$'
+      )
+    )
+);
+
+create unique index if not exists user_profiles_username_unique
+  on public.user_profiles (pg_catalog.lower(username))
+  where username is not null;
+
+alter table public.user_profiles enable row level security;
+revoke all on table public.user_profiles from public, anon, authenticated;
+
+create table if not exists private.user_roles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null default 'user'
+    check (role in ('user', 'admin', 'creator')),
+  updated_at timestamptz not null default now()
+);
+
+alter table private.user_roles enable row level security;
+revoke all on table private.user_roles from public, anon, authenticated;
+
+create table if not exists private.account_moderation (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  status text not null default 'active'
+    check (status in ('active', 'suspended')),
+  reason text,
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+alter table private.account_moderation enable row level security;
+revoke all on table private.account_moderation from public, anon, authenticated;
+
+-- Creator-e-mailen indsættes manuelt i Supabase. Tabellen er aldrig eksponeret.
+create table if not exists private.creator_allowlist (
+  email text primary key,
+  created_at timestamptz not null default now(),
+  constraint creator_allowlist_lowercase
+    check (email = pg_catalog.lower(pg_catalog.btrim(email)))
+);
+
+alter table private.creator_allowlist enable row level security;
+revoke all on table private.creator_allowlist from public, anon, authenticated;
+
+create or replace function private.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_role text := 'user';
+begin
+  if new.email is not null and exists (
+    select 1
+    from private.creator_allowlist as allowlisted
+    where allowlisted.email = pg_catalog.lower(pg_catalog.btrim(new.email))
+  ) then
+    v_role := 'creator';
+  end if;
+
+  insert into public.user_profiles (user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
+
+  insert into private.user_roles (user_id, role)
+  values (new.id, v_role)
+  on conflict (user_id) do nothing;
+
+  insert into private.account_moderation (user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.handle_new_auth_user()
+  from public, anon, authenticated;
+
+create or replace trigger on_auth_user_created_pladetjek
+  after insert on auth.users
+  for each row execute function private.handle_new_auth_user();
+
+insert into public.user_profiles (user_id, created_at, updated_at, last_active_at)
+select auth_user.id, auth_user.created_at, auth_user.created_at, auth_user.created_at
+from auth.users as auth_user
+on conflict (user_id) do nothing;
+
+insert into private.user_roles (user_id)
+select auth_user.id
+from auth.users as auth_user
+on conflict (user_id) do nothing;
+
+insert into private.account_moderation (user_id)
+select auth_user.id
+from auth.users as auth_user
+on conflict (user_id) do nothing;
+
+create or replace function private.assign_creator_by_email(p_email text)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_email text := pg_catalog.lower(pg_catalog.btrim(coalesce(p_email, '')));
+  v_user_id uuid;
+begin
+  if v_email = '' then
+    raise exception 'INVALID_EMAIL' using errcode = '22023';
+  end if;
+
+  insert into private.creator_allowlist (email)
+  values (v_email)
+  on conflict (email) do nothing;
+
+  select auth_user.id
+  into v_user_id
+  from auth.users as auth_user
+  where pg_catalog.lower(auth_user.email) = v_email
+  order by auth_user.created_at
+  limit 1;
+
+  if v_user_id is not null then
+    update private.user_roles
+    set role = 'creator', updated_at = now()
+    where user_id = v_user_id;
+  end if;
+
+  return v_user_id;
+end;
+$$;
+
+revoke all on function private.assign_creator_by_email(text)
+  from public, anon, authenticated;
+
 create table if not exists public.plate_alerts (
   id uuid primary key default gen_random_uuid(),
   plate text not null,
@@ -26,7 +176,7 @@ create table if not exists public.plate_alerts (
   constraint plate_alerts_plate_format
     check (plate ~ '^[A-ZÆØÅ]{2}[0-9]{5}$'),
   constraint plate_alerts_description_length
-    check (char_length(description) between 5 and 240),
+    check (pg_catalog.char_length(description) between 5 and 240),
   constraint plate_alerts_expiry_window
     check (
       expires_at > created_at
@@ -51,6 +201,127 @@ create table if not exists private.plate_match_rate_limits (
 
 alter table private.plate_match_rate_limits enable row level security;
 revoke all on table private.plate_match_rate_limits from public, anon, authenticated;
+
+create or replace function private.get_my_profile_internal()
+returns table (
+  user_id uuid,
+  email text,
+  username text,
+  hide_from_peers boolean,
+  role text,
+  account_status text,
+  created_at timestamptz,
+  last_active_at timestamptz,
+  is_anonymous boolean
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception 'AUTH_REQUIRED' using errcode = '42501';
+  end if;
+
+  update public.user_profiles as profile
+  set last_active_at = now()
+  where profile.user_id = v_user_id;
+
+  return query
+    select
+      auth_user.id,
+      auth_user.email::text,
+      profile.username,
+      profile.hide_from_peers,
+      user_role.role,
+      moderation.status,
+      auth_user.created_at,
+      profile.last_active_at,
+      (auth_user.email is null)
+    from auth.users as auth_user
+    join public.user_profiles as profile on profile.user_id = auth_user.id
+    join private.user_roles as user_role on user_role.user_id = auth_user.id
+    join private.account_moderation as moderation on moderation.user_id = auth_user.id
+    where auth_user.id = v_user_id;
+end;
+$$;
+
+revoke all on function private.get_my_profile_internal()
+  from public, anon, authenticated;
+grant execute on function private.get_my_profile_internal()
+  to authenticated;
+
+create or replace function private.save_my_profile_internal(
+  p_username text,
+  p_hide_from_peers boolean
+)
+returns table (
+  user_id uuid,
+  email text,
+  username text,
+  hide_from_peers boolean,
+  role text,
+  account_status text,
+  created_at timestamptz,
+  last_active_at timestamptz,
+  is_anonymous boolean
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_username text := pg_catalog.btrim(coalesce(p_username, ''));
+  v_email text;
+  v_status text;
+begin
+  if v_user_id is null then
+    raise exception 'AUTH_REQUIRED' using errcode = '42501';
+  end if;
+
+  select auth_user.email, moderation.status
+  into v_email, v_status
+  from auth.users as auth_user
+  join private.account_moderation as moderation on moderation.user_id = auth_user.id
+  where auth_user.id = v_user_id;
+
+  if v_email is null then
+    raise exception 'PERMANENT_ACCOUNT_REQUIRED' using errcode = '42501';
+  end if;
+
+  if v_status <> 'active' then
+    raise exception 'ACCOUNT_SUSPENDED' using errcode = '42501';
+  end if;
+
+  if pg_catalog.char_length(v_username) not between 3 and 24
+    or v_username !~ '^[A-Za-zÆØÅæøå0-9_]+$' then
+    raise exception 'INVALID_USERNAME' using errcode = '22023';
+  end if;
+
+  begin
+    update public.user_profiles as profile
+    set
+      username = v_username,
+      hide_from_peers = coalesce(p_hide_from_peers, true),
+      updated_at = now(),
+      last_active_at = now()
+    where profile.user_id = v_user_id;
+  exception
+    when unique_violation then
+      raise exception 'USERNAME_TAKEN' using errcode = '23505';
+  end;
+
+  return query select * from private.get_my_profile_internal();
+end;
+$$;
+
+revoke all on function private.save_my_profile_internal(text, boolean)
+  from public, anon, authenticated;
+grant execute on function private.save_my_profile_internal(text, boolean)
+  to authenticated;
 
 create or replace function private.create_plate_alert_internal(
   p_plate text,
@@ -94,9 +365,19 @@ declare
   v_existing public.plate_alerts%rowtype;
   v_created public.plate_alerts%rowtype;
   v_recent_count integer;
+  v_status text;
 begin
   if v_user_id is null then
     raise exception 'AUTH_REQUIRED' using errcode = '42501';
+  end if;
+
+  select moderation.status
+  into v_status
+  from private.account_moderation as moderation
+  where moderation.user_id = v_user_id;
+
+  if coalesce(v_status, 'suspended') <> 'active' then
+    raise exception 'ACCOUNT_SUSPENDED' using errcode = '42501';
   end if;
 
   if v_plate !~ '^[A-ZÆØÅ]{2}[0-9]{5}$' then
@@ -135,7 +416,7 @@ begin
     return;
   end if;
 
-  select count(*)::integer
+  select pg_catalog.count(*)::integer
   into v_recent_count
   from public.plate_alerts as alert
   where alert.reporter_id = v_user_id
@@ -159,6 +440,10 @@ begin
   )
   returning public.plate_alerts.* into v_created;
 
+  update public.user_profiles as profile
+  set last_active_at = now()
+  where profile.user_id = v_user_id;
+
   return query
     select
       v_created.id,
@@ -175,13 +460,14 @@ revoke all on function private.create_plate_alert_internal(text, text)
 grant execute on function private.create_plate_alert_internal(text, text)
   to authenticated;
 
-create or replace function private.match_plate_alert_internal(p_plate text)
+create or replace function private.match_plate_alert_v2_internal(p_plate text)
 returns table (
   id uuid,
   plate text,
   description text,
   created_at timestamptz,
-  expires_at timestamptz
+  expires_at timestamptz,
+  reporter_name text
 )
 language plpgsql
 security definer
@@ -198,9 +484,19 @@ declare
     )
   );
   v_request_count integer;
+  v_status text;
 begin
   if v_user_id is null then
     raise exception 'AUTH_REQUIRED' using errcode = '42501';
+  end if;
+
+  select moderation.status
+  into v_status
+  from private.account_moderation as moderation
+  where moderation.user_id = v_user_id;
+
+  if coalesce(v_status, 'suspended') <> 'active' then
+    raise exception 'ACCOUNT_SUSPENDED' using errcode = '42501';
   end if;
 
   if v_plate !~ '^[A-ZÆØÅ]{2}[0-9]{5}$' then
@@ -235,14 +531,25 @@ begin
   where window_started_at < now() - interval '1 day'
     and user_id <> v_user_id;
 
+  update public.user_profiles as profile
+  set last_active_at = now()
+  where profile.user_id = v_user_id;
+
   return query
     select
       alert.id,
       alert.plate,
       alert.description,
       alert.created_at,
-      alert.expires_at
+      alert.expires_at,
+      case
+        when reporter.username is not null and reporter.hide_from_peers = false
+          then reporter.username
+        else 'Anonym bruger'
+      end::text
     from public.plate_alerts as alert
+    left join public.user_profiles as reporter
+      on reporter.user_id = alert.reporter_id
     where alert.plate = v_plate
       and alert.expires_at > now()
     order by alert.created_at desc
@@ -250,9 +557,248 @@ begin
 end;
 $$;
 
-revoke all on function private.match_plate_alert_internal(text)
+revoke all on function private.match_plate_alert_v2_internal(text)
   from public, anon, authenticated;
-grant execute on function private.match_plate_alert_internal(text)
+grant execute on function private.match_plate_alert_v2_internal(text)
+  to authenticated;
+
+create or replace function private.admin_list_users_internal(
+  p_search text default '',
+  p_status text default 'all',
+  p_limit integer default 50,
+  p_offset integer default 0
+)
+returns table (
+  user_id uuid,
+  email text,
+  username text,
+  role text,
+  account_status text,
+  hide_from_peers boolean,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  last_active_at timestamptz,
+  is_anonymous boolean,
+  total_count bigint
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_caller_id uuid := auth.uid();
+  v_caller_role text;
+  v_search text := pg_catalog.lower(pg_catalog.btrim(coalesce(p_search, '')));
+  v_status text := pg_catalog.lower(pg_catalog.btrim(coalesce(p_status, 'all')));
+begin
+  select user_role.role
+  into v_caller_role
+  from private.user_roles as user_role
+  where user_role.user_id = v_caller_id;
+
+  if v_caller_role not in ('admin', 'creator') then
+    raise exception 'ADMIN_REQUIRED' using errcode = '42501';
+  end if;
+
+  if v_status not in ('all', 'active', 'suspended') then
+    raise exception 'INVALID_STATUS' using errcode = '22023';
+  end if;
+
+  return query
+    select
+      auth_user.id,
+      auth_user.email::text,
+      profile.username,
+      user_role.role,
+      moderation.status,
+      profile.hide_from_peers,
+      auth_user.created_at,
+      auth_user.last_sign_in_at,
+      profile.last_active_at,
+      (auth_user.email is null),
+      pg_catalog.count(*) over()
+    from auth.users as auth_user
+    join public.user_profiles as profile on profile.user_id = auth_user.id
+    join private.user_roles as user_role on user_role.user_id = auth_user.id
+    join private.account_moderation as moderation on moderation.user_id = auth_user.id
+    where
+      (v_status = 'all' or moderation.status = v_status)
+      and (
+        v_search = ''
+        or pg_catalog.lower(coalesce(profile.username, '')) like '%' || v_search || '%'
+        or pg_catalog.lower(coalesce(auth_user.email, '')) like '%' || v_search || '%'
+        or pg_catalog.lower(auth_user.id::text) like '%' || v_search || '%'
+      )
+    order by profile.last_active_at desc, auth_user.created_at desc
+    limit pg_catalog.greatest(1, pg_catalog.least(coalesce(p_limit, 50), 100))
+    offset pg_catalog.greatest(coalesce(p_offset, 0), 0);
+end;
+$$;
+
+revoke all on function private.admin_list_users_internal(text, text, integer, integer)
+  from public, anon, authenticated;
+grant execute on function private.admin_list_users_internal(text, text, integer, integer)
+  to authenticated;
+
+create or replace function private.admin_set_user_status_internal(
+  p_user_id uuid,
+  p_status text,
+  p_reason text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_caller_id uuid := auth.uid();
+  v_caller_role text;
+  v_target_role text;
+  v_status text := pg_catalog.lower(pg_catalog.btrim(coalesce(p_status, '')));
+begin
+  select user_role.role into v_caller_role
+  from private.user_roles as user_role
+  where user_role.user_id = v_caller_id;
+
+  select user_role.role into v_target_role
+  from private.user_roles as user_role
+  where user_role.user_id = p_user_id;
+
+  if v_caller_role not in ('admin', 'creator') then
+    raise exception 'ADMIN_REQUIRED' using errcode = '42501';
+  end if;
+
+  if v_status not in ('active', 'suspended') then
+    raise exception 'INVALID_STATUS' using errcode = '22023';
+  end if;
+
+  if p_user_id is null or v_target_role is null then
+    raise exception 'USER_NOT_FOUND' using errcode = 'P0002';
+  end if;
+
+  if p_user_id = v_caller_id or v_target_role = 'creator' then
+    raise exception 'PROTECTED_ACCOUNT' using errcode = '42501';
+  end if;
+
+  if v_caller_role = 'admin' and v_target_role <> 'user' then
+    raise exception 'CREATOR_REQUIRED' using errcode = '42501';
+  end if;
+
+  update private.account_moderation
+  set
+    status = v_status,
+    reason = nullif(pg_catalog.btrim(coalesce(p_reason, '')), ''),
+    updated_by = v_caller_id,
+    updated_at = now()
+  where user_id = p_user_id;
+end;
+$$;
+
+revoke all on function private.admin_set_user_status_internal(uuid, text, text)
+  from public, anon, authenticated;
+grant execute on function private.admin_set_user_status_internal(uuid, text, text)
+  to authenticated;
+
+create or replace function private.admin_set_user_role_internal(
+  p_user_id uuid,
+  p_role text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_caller_id uuid := auth.uid();
+  v_caller_role text;
+  v_target_role text;
+  v_role text := pg_catalog.lower(pg_catalog.btrim(coalesce(p_role, '')));
+begin
+  select user_role.role into v_caller_role
+  from private.user_roles as user_role
+  where user_role.user_id = v_caller_id;
+
+  select user_role.role into v_target_role
+  from private.user_roles as user_role
+  where user_role.user_id = p_user_id;
+
+  if v_caller_role <> 'creator' then
+    raise exception 'CREATOR_REQUIRED' using errcode = '42501';
+  end if;
+
+  if v_role not in ('user', 'admin') then
+    raise exception 'INVALID_ROLE' using errcode = '22023';
+  end if;
+
+  if p_user_id is null or v_target_role is null then
+    raise exception 'USER_NOT_FOUND' using errcode = 'P0002';
+  end if;
+
+  if p_user_id = v_caller_id or v_target_role = 'creator' then
+    raise exception 'PROTECTED_ACCOUNT' using errcode = '42501';
+  end if;
+
+  update private.user_roles
+  set role = v_role, updated_at = now()
+  where user_id = p_user_id;
+end;
+$$;
+
+revoke all on function private.admin_set_user_role_internal(uuid, text)
+  from public, anon, authenticated;
+grant execute on function private.admin_set_user_role_internal(uuid, text)
+  to authenticated;
+
+create or replace function public.get_my_profile()
+returns table (
+  user_id uuid,
+  email text,
+  username text,
+  hide_from_peers boolean,
+  role text,
+  account_status text,
+  created_at timestamptz,
+  last_active_at timestamptz,
+  is_anonymous boolean
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select * from private.get_my_profile_internal();
+$$;
+
+revoke all on function public.get_my_profile()
+  from public, anon, authenticated;
+grant execute on function public.get_my_profile()
+  to authenticated;
+
+create or replace function public.save_my_profile(
+  p_username text,
+  p_hide_from_peers boolean
+)
+returns table (
+  user_id uuid,
+  email text,
+  username text,
+  hide_from_peers boolean,
+  role text,
+  account_status text,
+  created_at timestamptz,
+  last_active_at timestamptz,
+  is_anonymous boolean
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select *
+  from private.save_my_profile_internal(p_username, p_hide_from_peers);
+$$;
+
+revoke all on function public.save_my_profile(text, boolean)
+  from public, anon, authenticated;
+grant execute on function public.save_my_profile(text, boolean)
   to authenticated;
 
 create or replace function public.create_plate_alert(
@@ -280,34 +826,111 @@ revoke all on function public.create_plate_alert(text, text)
 grant execute on function public.create_plate_alert(text, text)
   to authenticated;
 
-create or replace function public.match_plate_alert(p_plate text)
+create or replace function public.match_plate_alert_v2(p_plate text)
 returns table (
   id uuid,
   plate text,
   description text,
   created_at timestamptz,
-  expires_at timestamptz
+  expires_at timestamptz,
+  reporter_name text
 )
 language sql
 security invoker
 set search_path = ''
 as $$
   select *
-  from private.match_plate_alert_internal(p_plate);
+  from private.match_plate_alert_v2_internal(p_plate);
 $$;
 
-revoke all on function public.match_plate_alert(text)
+revoke all on function public.match_plate_alert_v2(text)
   from public, anon, authenticated;
-grant execute on function public.match_plate_alert(text)
+grant execute on function public.match_plate_alert_v2(text)
   to authenticated;
+
+create or replace function public.admin_list_users(
+  p_search text default '',
+  p_status text default 'all',
+  p_limit integer default 50,
+  p_offset integer default 0
+)
+returns table (
+  user_id uuid,
+  email text,
+  username text,
+  role text,
+  account_status text,
+  hide_from_peers boolean,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  last_active_at timestamptz,
+  is_anonymous boolean,
+  total_count bigint
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select *
+  from private.admin_list_users_internal(p_search, p_status, p_limit, p_offset);
+$$;
+
+revoke all on function public.admin_list_users(text, text, integer, integer)
+  from public, anon, authenticated;
+grant execute on function public.admin_list_users(text, text, integer, integer)
+  to authenticated;
+
+create or replace function public.admin_set_user_status(
+  p_user_id uuid,
+  p_status text,
+  p_reason text default null
+)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.admin_set_user_status_internal(p_user_id, p_status, p_reason);
+$$;
+
+revoke all on function public.admin_set_user_status(uuid, text, text)
+  from public, anon, authenticated;
+grant execute on function public.admin_set_user_status(uuid, text, text)
+  to authenticated;
+
+create or replace function public.admin_set_user_role(
+  p_user_id uuid,
+  p_role text
+)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.admin_set_user_role_internal(p_user_id, p_role);
+$$;
+
+revoke all on function public.admin_set_user_role(uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.admin_set_user_role(uuid, text)
+  to authenticated;
+
+comment on table public.user_profiles is
+  'Private-by-default Pladetjek-profiler. Klienter har ingen direkte tabeladgang.';
 
 comment on table public.plate_alerts is
   'Matchbaserede Pladetjek-advarsler. Ingen klientrolle kan læse tabellen direkte.';
 
-comment on function public.create_plate_alert(text, text) is
-  'Opretter en tidsbegrænset advarsel med dublet- og ratekontrol.';
+comment on function public.get_my_profile() is
+  'Returnerer kun den aktuelle brugers egen konto og beskyttede rolle.';
 
-comment on function public.match_plate_alert(text) is
-  'Returnerer højst ét aktivt match for den præcise scannede nummerplade.';
+comment on function public.admin_list_users(text, text, integer, integer) is
+  'Beskyttet brugeroversigt med e-mail og internt id for creator/admin.';
+
+comment on function public.create_plate_alert(text, text) is
+  'Opretter en tidsbegrænset advarsel med dublet-, status- og ratekontrol.';
+
+comment on function public.match_plate_alert_v2(text) is
+  'Returnerer højst ét aktivt match samt kun det tilladte offentlige afsendernavn.';
 
 commit;

@@ -26,7 +26,41 @@ if (!directRead.error) {
   throw new Error("Sikkerhedsfejl: klienten kunne læse hele advarselstabellen.");
 }
 
-const plate = "ZZ99999";
+const profileRead = await supabase.from("user_profiles").select("user_id").limit(1);
+if (!profileRead.error) {
+  throw new Error("Sikkerhedsfejl: klienten kunne læse hele profiltabellen.");
+}
+
+const ownProfile = await supabase.rpc("get_my_profile");
+if (
+  ownProfile.error
+  || !Array.isArray(ownProfile.data)
+  || ownProfile.data[0]?.user_id !== signedIn.data.user.id
+  || ownProfile.data[0]?.is_anonymous !== true
+  || ownProfile.data[0]?.role !== "user"
+) {
+  throw ownProfile.error ?? new Error("Den private egenprofil kunne ikke hentes.");
+}
+
+const anonymousProfileWrite = await supabase.rpc("save_my_profile", {
+  p_username: "SupabaseTest",
+  p_hide_from_peers: false,
+});
+if (!anonymousProfileWrite.error?.message.includes("PERMANENT_ACCOUNT_REQUIRED")) {
+  throw new Error("Sikkerhedsfejl: en midlertidig konto kunne gemme en offentlig profil.");
+}
+
+const adminRead = await supabase.rpc("admin_list_users", {
+  p_search: "",
+  p_status: "all",
+  p_limit: 10,
+  p_offset: 0,
+});
+if (!adminRead.error?.message.includes("ADMIN_REQUIRED")) {
+  throw new Error("Sikkerhedsfejl: en almindelig bruger kunne åbne brugerstyringen.");
+}
+
+const plate = `ZZ${String(Date.now()).slice(-5)}`;
 const description = "Automatisk Supabase-forbindelsestest";
 const created = await supabase.rpc("create_plate_alert", {
   p_plate: plate,
@@ -48,14 +82,17 @@ if (
   throw duplicate.error ?? new Error("Dubletkontrollen virkede ikke.");
 }
 
-const matched = await supabase.rpc("match_plate_alert", { p_plate: plate });
+const matched = await supabase.rpc("match_plate_alert_v2", { p_plate: plate });
 if (
   matched.error
   || !Array.isArray(matched.data)
   || matched.data[0]?.plate !== plate
+  || matched.data[0]?.reporter_name !== "Anonym bruger"
 ) {
   throw matched.error ?? new Error("Matchopslaget virkede ikke.");
 }
 
 await supabase.auth.signOut();
-console.log("Supabase verificeret: anonym login, RLS, dubletkontrol og præcist match.");
+console.log(
+  "Supabase verificeret: anonym profil, privat RLS, rolleblokering, dubletkontrol og anonymt match.",
+);

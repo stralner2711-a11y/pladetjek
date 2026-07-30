@@ -94,12 +94,37 @@ opdateringer og de vigtige regler om versionskode og signeringsnøgle.
 - Opslag caches kun i hukommelsen i 30 sekunder og skrives ikke til disk.
 - Brugeradvarsler gemmes i Pladetjeks separate Supabase-projekt og udløber efter
   én time. Den lokale JSON-backend bruges kun som udviklingsfallback.
-- Hver installation får automatisk sin egen anonyme Supabase-session;
-  e-mail/password-login er deaktiveret.
+- Hver installation får automatisk sin egen anonyme Supabase-session.
+- En permanent konto bruger et sikkert e-mail-link uden adgangskode.
+- Andre brugere ser kun det valgte brugernavn eller `Anonym bruger`.
+- E-mail, internt bruger-id, roller og moderation udleveres kun via beskyttede
+  creator/admin-funktioner.
 - Beskrivelsen må højst være 240 tegn og bør ikke indeholde navne eller andre
   personoplysninger.
-- Verificerede konti, moderation og en dokumenteret slettepolitik bør tilføjes,
-  før løsningen åbnes for en større offentlig brugergruppe.
+- En dokumenteret slettepolitik bør tilføjes, før løsningen åbnes for en større
+  offentlig brugergruppe.
+
+### Creator og administratorer
+
+Roller gemmes i `private.user_roles` og aldrig i brugerens redigerbare metadata.
+Suspenderede brugere kan ikke oprette eller matche fælles advarsler.
+
+Creator-rollen kan ikke kræves fra appen. Når creator-e-mailen er kendt, køres
+følgende én gang i Supabase SQL Editor:
+
+```sql
+select private.assign_creator_by_email('din-email@example.dk');
+```
+
+Kommandoen kan køres før eller efter kontoen oprettes. Android-login kræver
+desuden denne tilladte redirect-URL under Supabase Authentication:
+
+```text
+dk.pladetjek.app://login-callback
+```
+
+Supabases indbyggede e-mailtjeneste er egnet til begrænset test. Før mange
+brugere inviteres, bør projektet forbindes til en egen SMTP-udbyder.
 
 Et resultat fra Bilbogen viser en tinglyst hæftelse, ikke nødvendigvis den
 aktuelle restgæld. Kritiske resultater bør efterkontrolleres i Bilbogen.

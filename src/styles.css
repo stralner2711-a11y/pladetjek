@@ -74,6 +74,7 @@
 .match-icon{width:57px;height:57px;border:2px solid #ef4d50;color:#ef4d50;border-radius:50%;display:grid;place-items:center;margin:0 auto 13px}.match-icon svg{width:29px}
 .match-dialog h2{font-size:20px;margin:0 0 19px}.match-plate{border:2px solid #ef4d50;border-radius:6px;background:#f8fafb;color:#0d1a24;display:inline-block;padding:10px 18px;font-size:29px;font-weight:700;letter-spacing:.11em;margin-bottom:18px}
 .match-copy{text-align:left;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:15px 0}.match-copy strong{font-size:13px}.match-copy p{margin:5px 0 12px;font-size:14px;line-height:1.45}.match-copy time{color:var(--muted);font-size:11px}
+.match-reporter{display:block;color:var(--cyan);font-size:11px;margin-bottom:3px}
 .match-dialog>button{width:100%;height:47px;margin-top:18px;border:0;border-radius:6px;background:#ef4d50;color:white;font-weight:700;cursor:pointer}.match-dialog>button:hover{background:#ff5b5e}
 .match-dialog>small{display:block;color:var(--muted);font-size:10px;line-height:1.45;margin:13px auto 0;max-width:390px}
 @media(max-width:1100px){.alerts-grid{grid-template-columns:1fr}.alert-form{border-right:0;border-bottom:1px solid var(--line)}}
