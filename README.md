@@ -24,7 +24,7 @@ Scanneren analyserer kun området i den synlige ramme. Et OCR-resultat acceptere
 først, når format, placering, størrelse, hældning og genkendelsessikkerhed passer
 til en nummerplade, og den samme plade er set i flere kamerabilleder.
 
-Advarsler udløber som standard efter 60 minutter og gemmes i
+Nummerplader og advarselstekster gemmes uden automatisk udløb i
 det separate Supabase-projekt `Pladetjek` (`uolrwogzfegrdjbjvsvu`). Klienterne
 kan ikke hente hele listen over aktive advarsler; RLS og to snævre RPC-kald
 tillader kun oprettelse og et præcist match på den aktivt scannede nummerplade.
@@ -40,6 +40,8 @@ Præcise positioner og push-tokens ligger kun i Supabases private skema og kan
 ikke læses af appklienter. Modtageren får kun en afrundet afstand, tidspunktet
 for matchet og et område afrundet til cirka 100–200 meter. Afsenderen modtager
 ikke sin egen pushbesked, og gentagne match samme sted dæmpes i 15 minutter.
+Selve match-/pushhændelsen er tidsbegrænset; den gemte nummerpladeadvarsel er
+fortsat aktiv.
 
 ## Datakilder
 
@@ -104,8 +106,8 @@ opdateringer og de vigtige regler om versionskode og signeringsnøgle.
 - Debitorers navn, CPR og fødselsdato videresendes ikke til klienten.
 - Kun kreditors navn/CVR og hæftelsens hovedstol vises.
 - Opslag caches kun i hukommelsen i 30 sekunder og skrives ikke til disk.
-- Brugeradvarsler gemmes i Pladetjeks separate Supabase-projekt og udløber efter
-  én time. Den lokale JSON-backend bruges kun som udviklingsfallback.
+- Brugeradvarsler gemmes i Pladetjeks separate Supabase-projekt uden automatisk
+  udløb. Den lokale JSON-backend bruges kun som udviklingsfallback.
 - Hver installation får automatisk sin egen anonyme Supabase-session.
 - En permanent konto bruger et sikkert e-mail-link uden adgangskode.
 - Andre brugere ser kun det valgte brugernavn eller `Anonym bruger`.

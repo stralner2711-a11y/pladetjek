@@ -11,7 +11,11 @@ const host = process.env.HOST ?? "0.0.0.0";
 const timeoutMs = Number(process.env.NUMMERPLADE_API_TIMEOUT_MS ?? 8000);
 const cacheMs = Number(process.env.NUMMERPLADE_CACHE_SECONDS ?? 30) * 1000;
 const token = process.env.NUMMERPLADE_API_TOKEN;
-const alertLifetimeMs = Number(process.env.ALERT_LIFETIME_MINUTES ?? 60) * 60_000;
+const configuredAlertLifetimeMinutes = Number(process.env.ALERT_LIFETIME_MINUTES);
+const alertLifetimeMs =
+  Number.isFinite(configuredAlertLifetimeMinutes) && configuredAlertLifetimeMinutes > 0
+    ? configuredAlertLifetimeMinutes * 60_000
+    : Number.POSITIVE_INFINITY;
 const alertDataFile = path.resolve(process.env.ALERT_DATA_FILE ?? "data/alerts.json");
 const alerts = new AlertService(alertLifetimeMs, 15 * 60_000, 500, loadStoredAlerts());
 const lookupCache = new Map<string, { expires: number; value: VehicleLookup }>();

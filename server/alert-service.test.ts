@@ -34,6 +34,15 @@ test("advarsler udløber automatisk", () => {
   assert.equal(service.match("AB12345", 11_001), null);
 });
 
+test("nummerpladeadvarsler gemmes uden automatisk udløb som standard", () => {
+  const service = new AlertService();
+  const created = service.create("AB12345", "Kørte langsomt forbi", 1_000);
+  const oneYearLater = 1_000 + 365 * 24 * 60 * 60 * 1000;
+
+  assert.equal(created.alert.expiresAt, "9999-12-31T23:59:59.999Z");
+  assert.equal(service.match("AB12345", oneYearLater)?.id, created.alert.id);
+});
+
 test("en observationstekst på 5 til 240 tegn er påkrævet", () => {
   const service = new AlertService();
   assert.throws(() => service.create("AB12345", "kort", 1_000), /INVALID_DESCRIPTION/);

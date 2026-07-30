@@ -172,21 +172,27 @@ create table if not exists public.plate_alerts (
   plate text not null,
   description text not null,
   reporter_id uuid not null references auth.users(id) on delete cascade,
+  is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  expires_at timestamptz not null default (now() + interval '1 hour'),
+  expires_at timestamptz not null default 'infinity'::timestamptz,
   constraint plate_alerts_plate_format
     check (plate ~ '^[A-ZÆØÅ]{2}[0-9]{5}$'),
   constraint plate_alerts_description_length
-    check (pg_catalog.char_length(description) between 5 and 240),
-  constraint plate_alerts_expiry_window
-    check (
-      expires_at > created_at
-      and expires_at <= created_at + interval '24 hours'
-    )
+    check (pg_catalog.char_length(description) between 5 and 240)
 );
+
+alter table public.plate_alerts
+  add column if not exists is_active boolean not null default true;
+alter table public.plate_alerts
+  drop constraint if exists plate_alerts_expiry_window;
+alter table public.plate_alerts
+  alter column expires_at set default 'infinity'::timestamptz;
 
 create index if not exists plate_alerts_match_idx
   on public.plate_alerts (plate, expires_at desc);
+
+create index if not exists plate_alerts_active_match_idx
+  on public.plate_alerts (plate, is_active, created_at desc);
 
 create index if not exists plate_alerts_reporter_rate_idx
   on public.plate_alerts (reporter_id, created_at desc);
@@ -536,14 +542,11 @@ begin
     pg_catalog.hashtextextended(v_plate, 0)
   );
 
-  delete from public.plate_alerts as expired_alert
-  where expired_alert.expires_at <= now() - interval '24 hours';
-
   select alert.*
   into v_existing
   from public.plate_alerts as alert
   where alert.plate = v_plate
-    and alert.expires_at > now()
+    and alert.is_active = true
     and alert.created_at >= now() - interval '15 minutes'
   order by alert.created_at desc
   limit 1;
@@ -574,13 +577,15 @@ begin
     plate,
     description,
     reporter_id,
+    is_active,
     expires_at
   )
   values (
     v_plate,
     v_description,
     v_user_id,
-    now() + interval '1 hour'
+    true,
+    'infinity'::timestamptz
   )
   returning public.plate_alerts.* into v_created;
 
@@ -695,7 +700,7 @@ begin
     left join public.user_profiles as reporter
       on reporter.user_id = alert.reporter_id
     where alert.plate = v_plate
-      and alert.expires_at > now()
+      and alert.is_active = true
     order by alert.created_at desc
     limit 1;
 end;
@@ -1731,7 +1736,7 @@ comment on function public.admin_list_users(text, text, integer, integer) is
   'Beskyttet brugeroversigt med e-mail og internt id for creator/admin.';
 
 comment on function public.create_plate_alert(text, text) is
-  'Opretter en tidsbegrænset advarsel med dublet-, status- og ratekontrol.';
+  'Opretter en vedvarende nummerpladeadvarsel med dublet-, status- og ratekontrol.';
 
 comment on function public.match_plate_alert_v2(text) is
   'Returnerer højst ét aktivt match samt kun det tilladte offentlige afsendernavn.';

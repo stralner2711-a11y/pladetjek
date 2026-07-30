@@ -29,7 +29,7 @@ export class AlertService {
   private alerts: VehicleAlert[];
 
   constructor(
-    private readonly lifetimeMs = 60 * 60 * 1000,
+    private readonly lifetimeMs = Number.POSITIVE_INFINITY,
     private readonly duplicateWindowMs = 15 * 60 * 1000,
     private readonly maxAlerts = 500,
     initialAlerts: VehicleAlert[] = [],
@@ -86,7 +86,9 @@ export class AlertService {
       plate,
       description,
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + this.lifetimeMs).toISOString(),
+      expiresAt: Number.isFinite(this.lifetimeMs)
+        ? new Date(now + this.lifetimeMs).toISOString()
+        : "9999-12-31T23:59:59.999Z",
     };
     this.alerts = [alert, ...this.alerts].slice(0, this.maxAlerts);
     return { alert, duplicate: false };

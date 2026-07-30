@@ -805,7 +805,7 @@ function AlertSection() {
       setStatusMessage(
         result.duplicate
           ? "Der findes allerede en aktiv advarsel for nummerpladen."
-          : "Advarslen er gemt og vises kun, når scanneren finder et match.",
+          : "Advarslen er gemt og vises kun ved et scannermatch.",
       );
       setAlertPlate("");
       setDescription("");
@@ -857,7 +857,9 @@ function AlertSection() {
         <button className="alert-send" type="submit" disabled={!validPlate || !validDescription}>
           <TriangleAlert /> GEM ADVARSEL
         </button>
-        <p className="alert-helper">Der sendes ingen alarm nu. Teksten vises kun ved et scannermatch.</p>
+        <p className="alert-helper">
+          Gemmes uden automatisk udløb. Der sendes først en alarm ved et scannermatch.
+        </p>
         {statusMessage && <p className="alert-status" role="status">{statusMessage}</p>}
       </form>
       <div className="match-explanation">

@@ -74,6 +74,9 @@ const created = await supabase.rpc("create_plate_alert", {
 if (created.error || !Array.isArray(created.data) || !created.data[0]) {
   throw created.error ?? new Error("Testadvarslen kunne ikke oprettes.");
 }
+if (created.data[0].expires_at !== "infinity") {
+  throw new Error("Nummerpladeadvarslen blev ikke gemt uden automatisk udløb.");
+}
 
 const duplicate = await supabase.rpc("create_plate_alert", {
   p_plate: plate,
@@ -191,5 +194,5 @@ if (
 
 await supabase.auth.signOut();
 console.log(
-  "Supabase verificeret: privat RLS, 5 km-match, skjult push-kø og slettet enhedslokation.",
+  "Supabase verificeret: vedvarende nummerplade, privat RLS, 5 km-match, skjult push-kø og slettet enhedslokation.",
 );
