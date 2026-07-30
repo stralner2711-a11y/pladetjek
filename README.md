@@ -20,6 +20,10 @@ Android-appen bruger den gratis, lokalt pakkede
 Kamerabilledet sendes derfor ikke til OCR-servere. Appen sender kun den
 genkendte nummerplade til det præcise matchopslag.
 
+Scanneren analyserer kun området i den synlige ramme. Et OCR-resultat accepteres
+først, når format, placering, størrelse, hældning og genkendelsessikkerhed passer
+til en nummerplade, og den samme plade er set i flere kamerabilleder.
+
 Advarsler udløber som standard efter 60 minutter og gemmes i
 det separate Supabase-projekt `Pladetjek` (`uolrwogzfegrdjbjvsvu`). Klienterne
 kan ikke hente hele listen over aktive advarsler; RLS og to snævre RPC-kald

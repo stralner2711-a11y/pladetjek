@@ -13,7 +13,13 @@ import {
   updateIsAvailable,
   updateIsRequired,
 } from "./update-system";
-import { extractDanishPlate } from "./plate-recognition";
+import {
+  advancePlateEvidence,
+  calculateCoverCrop,
+  findBestPlateCandidate,
+  type PlateEvidence,
+  type PlateRecognitionResult,
+} from "./plate-recognition";
 import {
   createSharedAlert,
   matchSharedAlert,
@@ -80,7 +86,7 @@ type NativeUpdater = {
 };
 
 type NativePlateTextRecognizer = {
-  recognize: (options: { imageBase64: string }) => Promise<{ text: string }>;
+  recognize: (options: { imageBase64: string }) => Promise<PlateRecognitionResult>;
 };
 
 const AppUpdater = registerPlugin<NativeUpdater>("AppUpdater");
@@ -210,8 +216,10 @@ function App() {
   const [updateInstalling, setUpdateInstalling] = useState(false);
   const [updateMessage, setUpdateMessage] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scanFrameRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const plateEvidenceRef = useRef<PlateEvidence | null>(null);
   const updateCheckStarted = useRef(false);
   const lastMatchCheck = useRef({ plate: "", checkedAt: 0 });
 
@@ -247,6 +255,7 @@ function App() {
   useEffect(() => {
     if (!cameraOn) {
       setScannerStatus("Eksempelvisning");
+      plateEvidenceRef.current = null;
       return;
     }
     if (!Capacitor.isNativePlatform()) {
@@ -267,50 +276,82 @@ function App() {
 
       try {
         const canvas = scanCanvasRef.current ?? document.createElement("canvas");
+        const scanFrame = scanFrameRef.current;
+        if (!scanFrame) throw new Error("Scanningsrammen kunne ikke findes.");
         scanCanvasRef.current = canvas;
-        const sourceWidth = video.videoWidth * 0.8;
-        const sourceHeight = video.videoHeight * 0.36;
-        const sourceX = video.videoWidth * 0.1;
-        const sourceY = video.videoHeight * 0.42;
-        canvas.width = 960;
-        canvas.height = Math.max(240, Math.round(960 * sourceHeight / sourceWidth));
+        const videoBounds = video.getBoundingClientRect();
+        const frameBounds = scanFrame.getBoundingClientRect();
+        const crop = calculateCoverCrop(
+          video.videoWidth,
+          video.videoHeight,
+          videoBounds.width,
+          videoBounds.height,
+          {
+            left: frameBounds.left - videoBounds.left,
+            top: frameBounds.top - videoBounds.top,
+            width: frameBounds.width,
+            height: frameBounds.height,
+          },
+        );
+        canvas.width = 1280;
+        canvas.height = Math.max(280, Math.round(1280 * crop.height / crop.width));
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("Kamerabilledet kunne ikke behandles.");
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.filter = "grayscale(1) contrast(1.35)";
         context.drawImage(
           video,
-          sourceX,
-          sourceY,
-          sourceWidth,
-          sourceHeight,
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
           0,
           0,
           canvas.width,
           canvas.height,
         );
-        const imageBase64 = canvas.toDataURL("image/jpeg", 0.78).split(",")[1] ?? "";
+        context.filter = "none";
+        const imageBase64 = canvas.toDataURL("image/jpeg", 0.86).split(",")[1] ?? "";
         const recognized = await PlateTextRecognizer.recognize({ imageBase64 });
-        const candidate = extractDanishPlate(recognized.text);
+        const candidate = findBestPlateCandidate(recognized);
+        const evidenceUpdate = advancePlateEvidence(
+          plateEvidenceRef.current,
+          candidate,
+          Date.now(),
+        );
+        plateEvidenceRef.current = evidenceUpdate.evidence;
 
-        if (candidate && !cancelled) {
-          const formatted = displayPlate(candidate);
+        if (candidate && evidenceUpdate.evidence && !evidenceUpdate.confirmed && !cancelled) {
+          const formatted = displayPlate(candidate.plate);
+          setScannerStatus(
+            `Kontrollerer nummerplade · ${formatted} `
+            + `(${evidenceUpdate.evidence.hits}/${evidenceUpdate.evidence.requiredHits})`,
+          );
+        } else if (candidate && evidenceUpdate.confirmed && !cancelled) {
+          const formatted = displayPlate(candidate.plate);
           setPlate(formatted);
-          setScannerStatus(`Nummerplade genkendt · ${formatted}`);
+          setScannerStatus(`Nummerplade bekræftet · ${formatted}`);
 
           const now = Date.now();
           const recent = lastMatchCheck.current;
-          if (recent.plate !== candidate || now - recent.checkedAt > 15_000) {
-            lastMatchCheck.current = { plate: candidate, checkedAt: now };
-            const alert = await matchVehicleAlert(candidate);
+          if (recent.plate !== candidate.plate || now - recent.checkedAt > 15_000) {
+            lastMatchCheck.current = { plate: candidate.plate, checkedAt: now };
+            const alert = await matchVehicleAlert(candidate.plate);
             if (alert && !cancelled) {
               setMatchedAlert(alert);
               navigator.vibrate?.([350, 120, 350, 120, 500]);
             }
           }
         } else if (!cancelled) {
-          setScannerStatus("Scanner efter nummerplade…");
+          setScannerStatus(
+            evidenceUpdate.evidence
+              ? "Holder fokus · placér pladen midt i rammen…"
+              : "Placér en nummerplade midt i rammen…",
+          );
         }
       } catch {
-        if (!cancelled) setScannerStatus("Scanner efter nummerplade…");
+        if (!cancelled) setScannerStatus("Placér en nummerplade midt i rammen…");
       } finally {
         if (!cancelled) timer = window.setTimeout(() => void scanFrame(), 900);
       }
@@ -320,6 +361,7 @@ function App() {
     void scanFrame();
     return () => {
       cancelled = true;
+      plateEvidenceRef.current = null;
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [cameraOn]);
@@ -478,7 +520,9 @@ function App() {
             <div className="camera-stage">
               <img src="/demo-road.png" alt="Eksempel på kameravisning med en bil" className={cameraOn ? "hidden" : ""} />
               <video ref={videoRef} autoPlay playsInline muted className={cameraOn ? "" : "hidden"} />
-              <div className="scan-frame"><span /><span /><span /><span /></div>
+              <div ref={scanFrameRef} className="scan-frame">
+                <span /><span /><span /><span />
+              </div>
               <div className="recognized"><ScanLine /> {displayPlate(plate) || "AFVENTER PLADE"}</div>
             </div>
             <div className="camera-controls">
