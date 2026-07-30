@@ -8,6 +8,7 @@ import { requireAuthenticatedClient } from "./supabase-client";
 
 const INSTALLATION_KEY = "pladetjek:installation-id";
 const NEARBY_ENABLED_KEY = "pladetjek:nearby-alerts-enabled";
+const NEARBY_ONBOARDING_KEY_PREFIX = "pladetjek:nearby-onboarding:v1:";
 const REGISTRATION_TIMEOUT_MS = 20_000;
 
 export type NearbyCoordinates = {
@@ -49,6 +50,36 @@ export function nearbyAlertsAreSupported() {
 
 export function nearbyAlertsAreEnabledLocally() {
   return localStorage.getItem(NEARBY_ENABLED_KEY) === "true";
+}
+
+type NearbyOnboardingStorage = Pick<Storage, "getItem" | "setItem">;
+
+function nearbyOnboardingKey(userId: string) {
+  return `${NEARBY_ONBOARDING_KEY_PREFIX}${userId.trim().toLowerCase()}`;
+}
+
+export function nearbyOnboardingWasHandled(
+  userId: string,
+  storage: NearbyOnboardingStorage = localStorage,
+) {
+  if (!userId.trim()) return true;
+  try {
+    return storage.getItem(nearbyOnboardingKey(userId)) === "handled";
+  } catch {
+    return false;
+  }
+}
+
+export function markNearbyOnboardingHandled(
+  userId: string,
+  storage: NearbyOnboardingStorage = localStorage,
+) {
+  if (!userId.trim()) return;
+  try {
+    storage.setItem(nearbyOnboardingKey(userId), "handled");
+  } catch {
+    // Manglende lokal lagring må ikke blokere aktivering af nærhedsadvarsler.
+  }
 }
 
 export function getInstallationId() {

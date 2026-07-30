@@ -1,15 +1,15 @@
 {
-  "activeVersion": "1.6.0",
-  "activeVersionCode": 8,
+  "activeVersion": "1.7.0",
+  "activeVersionCode": 9,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.6.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.6.0",
-  "sha256": "f6d54a53a2d8eae92ef9386255f5b79e46eb594ef4d144d61c31d7f1fcadcf97",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.7.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.7.0",
+  "sha256": "32c7fe3f2b0b116e015fd13e6ee9959aa89c0f12838fd3e67dd15d38164d77ac",
   "changelog": [
-    "Scan en nummerplade direkte i sektionen Tilføj advarsel",
-    "Den genkendte nummerplade udfyldes automatisk i advarselsformularen",
-    "Brugeren skriver stadig selv beskrivelsen og bekræfter, før advarslen gemmes",
-    "Tilføjelsesscanningen opretter ikke match eller push-notifikationer"
+    "Engangsopsætning af 5 km-advarsler ved første login på Android-telefonen",
+    "Brugeren vælger selv mellem at aktivere lokation og notifikationer eller springe over",
+    "Dialogen vises ikke igen efter valget",
+    "Indstillingen kan altid ændres senere under Profil"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"

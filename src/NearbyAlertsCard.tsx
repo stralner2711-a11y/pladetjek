@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { BellRing, LocateFixed, MapPin, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BellRing, LocateFixed, MapPin, ShieldCheck, X } from "lucide-react";
 import {
   disableNearbyAlerts,
   enableNearbyAlerts,
   getNearbyAlertStatus,
+  markNearbyOnboardingHandled,
   type NearbyAlertStatus,
 } from "./nearby-alerts";
 
@@ -95,4 +96,94 @@ export function NearbyAlertsCard({ suspended }: { suspended: boolean }) {
           : "Aktivér lokation og notifikationer"}
     </button>
   </section>;
+}
+
+export function NearbyAlertsOnboarding({
+  userId,
+  onComplete,
+}: {
+  userId: string;
+  onComplete: () => void;
+}) {
+  const [working, setWorking] = useState(false);
+  const [message, setMessage] = useState("");
+  const activateButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    activateButtonRef.current?.focus();
+  }, []);
+
+  function complete() {
+    markNearbyOnboardingHandled(userId);
+    onComplete();
+  }
+
+  async function activate() {
+    if (working) return;
+    setWorking(true);
+    setMessage("");
+    try {
+      const status = await enableNearbyAlerts();
+      if (status.enabled) {
+        complete();
+        return;
+      }
+      setMessage(status.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return <div className="nearby-onboarding-backdrop" role="presentation">
+    <section
+      className="nearby-onboarding-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="nearby-onboarding-title"
+      aria-describedby="nearby-onboarding-description"
+    >
+      <button
+        className="nearby-onboarding-close"
+        type="button"
+        onClick={complete}
+        disabled={working}
+        aria-label="Ikke nu"
+      >
+        <X />
+      </button>
+      <div className="nearby-onboarding-symbol"><BellRing /></div>
+      <h2 id="nearby-onboarding-title">Få OBS-match inden for 5 km</h2>
+      <p id="nearby-onboarding-description">
+        Når en registreret nummerplade bliver scannet i nærheden, kan Pladetjek sende
+        dig beskeden “OBS – osten lugter i nærheden af dig”.
+      </p>
+      <div className="nearby-onboarding-details">
+        <p><LocateFixed /> Telefonens seneste position afgør, om du er inden for radius.</p>
+        <p><ShieldCheck /> Positionen er privat og udløber efter 30 minutter.</p>
+      </div>
+      {message &&
+        <p className="nearby-onboarding-message" role="status">
+          {message} Du kan også aktivere funktionen senere under Profil.
+        </p>}
+      <button
+        ref={activateButtonRef}
+        className="nearby-onboarding-primary"
+        type="button"
+        onClick={() => void activate()}
+        disabled={working}
+      >
+        {working ? <span className="spinner" /> : <MapPin />}
+        {working ? "Aktiverer…" : "Aktivér lokation og notifikationer"}
+      </button>
+      <button
+        className="nearby-onboarding-later"
+        type="button"
+        onClick={complete}
+        disabled={working}
+      >
+        Ikke nu
+      </button>
+      <small>Du kan altid slå funktionen fra igen under Profil.</small>
+    </section>
+  </div>;
 }

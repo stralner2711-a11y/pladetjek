@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   formatNearbyDistance,
+  markNearbyOnboardingHandled,
+  nearbyOnboardingWasHandled,
   parseNearbyMatchNotification,
 } from "./nearby-alerts";
 
@@ -51,4 +53,21 @@ test("formats nearby distance without suggesting exact precision", () => {
   assert.equal(formatNearbyDistance(141), "100 m");
   assert.equal(formatNearbyDistance(978), "1 km");
   assert.equal(formatNearbyDistance(1840), "1,8 km");
+});
+
+test("shows nearby onboarding only once per permanent user on the device", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem(key: string) {
+      return values.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value);
+    },
+  };
+
+  assert.equal(nearbyOnboardingWasHandled("user-a", storage), false);
+  markNearbyOnboardingHandled("user-a", storage);
+  assert.equal(nearbyOnboardingWasHandled("user-a", storage), true);
+  assert.equal(nearbyOnboardingWasHandled("user-b", storage), false);
 });

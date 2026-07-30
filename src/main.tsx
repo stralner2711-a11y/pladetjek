@@ -39,9 +39,11 @@ import {
   formatNearbyDistance,
   getNearbyMatchCoordinates,
   initializeNearbyNotificationListeners,
+  nearbyOnboardingWasHandled,
   refreshNearbyDevice,
   type NearbyCoordinates,
 } from "./nearby-alerts";
+import { NearbyAlertsOnboarding } from "./NearbyAlertsCard";
 import "./styles.css";
 
 type InstallPromptEvent = Event & {
@@ -222,6 +224,7 @@ function App() {
   const [activeView, setActiveView] = useState<ActiveView>("scanner");
   const [accountProfile, setAccountProfile] = useState<MyProfile | null>(null);
   const [accountLoading, setAccountLoading] = useState(true);
+  const [nearbyOnboardingUserId, setNearbyOnboardingUserId] = useState<string | null>(null);
   const [plate, setPlate] = useState("");
   const [result, setResult] = useState<Lookup | null>(null);
   const [error, setError] = useState<LookupError | null>(null);
@@ -366,6 +369,27 @@ function App() {
       removeNearbyListeners();
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      accountLoading
+      || !accountProfile
+      || accountProfile.isAnonymous
+      || accountProfile.accountStatus !== "active"
+      || !Capacitor.isNativePlatform()
+      || Capacitor.getPlatform() !== "android"
+      || nearbyOnboardingWasHandled(accountProfile.userId)
+    ) {
+      setNearbyOnboardingUserId(null);
+      return;
+    }
+    setNearbyOnboardingUserId(accountProfile.userId);
+  }, [
+    accountLoading,
+    accountProfile?.accountStatus,
+    accountProfile?.isAnonymous,
+    accountProfile?.userId,
+  ]);
 
   useEffect(() => {
     if (!cameraOn) {
@@ -839,6 +863,11 @@ function App() {
             </small>
           </section>
         </div>}
+      {nearbyOnboardingUserId &&
+        <NearbyAlertsOnboarding
+          userId={nearbyOnboardingUserId}
+          onComplete={() => setNearbyOnboardingUserId(null)}
+        />}
     </div>
   );
 }
