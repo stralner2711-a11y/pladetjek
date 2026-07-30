@@ -1,16 +1,16 @@
 {
-  "activeVersion": "1.8.1",
-  "activeVersionCode": 12,
+  "activeVersion": "1.9.0",
+  "activeVersionCode": 13,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.8.1/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.8.1",
-  "sha256": "418329bcff44bc633421357ea138bd6a38d0581ddad61bd917483baddbf4a70a",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.9.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.9.0",
+  "sha256": "75c82458053899be032a3d05fc02febd63fbe53b36da58bc3c6fc76d36f01b3b",
   "changelog": [
-    "Kamerabilledet lysnes og kontrastforbedres automatisk i mørke",
-    "En lygteknap vises på telefoner med understøttet kameralygte",
-    "Appen anbefaler lygten, når nummerpladerammen er for mørk",
-    "Kameraet bruger højere opløsning og kontinuerlig fokus",
-    "Billeder kontrolleres hurtigere under scanning"
+    "Tryk på mørke-advarslen for at tænde kameralygten direkte",
+    "Kamerazoom, tryk-for-fokus og bekræftelse af aflæst nummerplade",
+    "Privat lokal scanningshistorik og sikker testtilstand",
+    "Fejlrapportering og sammenlagte observationer med senest set",
+    "Nyt adminpanel med moderationskø, troværdighed og revisionslog"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"
