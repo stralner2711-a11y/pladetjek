@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
-  Camera, Check, Clock3, Download, ExternalLink, Flag, Flashlight, FlaskConical,
+  Camera, Check, Clock3, Download, ExternalLink, Flag, Flashlight,
   Focus, Gauge, History, MapPin, Menu, Play, RefreshCw, ScanLine, Search, ShieldCheck,
   Trash2, TriangleAlert, UserRound, UsersRound, Video, X, ZoomIn,
 } from "lucide-react";
@@ -102,8 +102,6 @@ const UPDATE_MANIFEST_URL = String(
 );
 const DISMISSED_UPDATE_KEY = "pladetjek:dismissed-update";
 const HISTORY_KEY = "pladetjek:scan-history:v1";
-const TEST_MODE_KEY = "pladetjek:test-mode";
-const TEST_PLATE = "TT00000";
 
 function loadPrivateHistory(): RegistryCheck[] {
   try {
@@ -113,25 +111,11 @@ function loadPrivateHistory(): RegistryCheck[] {
       typeof item?.plate === "string"
       && typeof item?.checkedAt === "string"
       && (item.alert === null || typeof item.alert?.description === "string")
+      && item.alert?.id !== "local-test-alert"
     )).slice(0, 50);
   } catch {
     return [];
   }
-}
-
-function localTestAlert(): VehicleAlert {
-  const now = new Date().toISOString();
-  return {
-    id: "local-test-alert",
-    plate: TEST_PLATE,
-    description: "Lokalt testmatch – ingen data eller notifikation er sendt.",
-    createdAt: now,
-    expiresAt: now,
-    reporterName: "Testtilstand",
-    observationCount: 3,
-    distinctReporterCount: 2,
-    lastSeenAt: now,
-  };
 }
 
 type NativeUpdater = {
@@ -256,7 +240,6 @@ function App() {
     useState<PendingPlateConfirmation | null>(null);
   const [matchedAlert, setMatchedAlert] = useState<VehicleAlert | null>(null);
   const [history, setHistory] = useState<RegistryCheck[]>(loadPrivateHistory);
-  const [testMode, setTestMode] = useState(() => localStorage.getItem(TEST_MODE_KEY) === "true");
   const [reportAlert, setReportAlert] = useState<VehicleAlert | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [reporting, setReporting] = useState(false);
@@ -365,10 +348,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 50)));
   }, [history]);
-
-  useEffect(() => {
-    localStorage.setItem(TEST_MODE_KEY, String(testMode));
-  }, [testMode]);
 
   useEffect(() => {
     let removeNearbyListeners: () => void = () => undefined;
@@ -791,12 +770,10 @@ function App() {
     setError(null);
     setResult(null);
     try {
-      const alert = testMode && normalized === TEST_PLATE
-        ? localTestAlert()
-        : await matchVehicleAlert(
-            normalized,
-            viaCamera ? await getNearbyMatchCoordinates() : null,
-          );
+      const alert = await matchVehicleAlert(
+        normalized,
+        viaCamera ? await getNearbyMatchCoordinates() : null,
+      );
       const check = {
         plate: normalized,
         checkedAt: new Date().toISOString(),
@@ -843,22 +820,6 @@ function App() {
     await runRegistryCheckForPlate(confirmedPlate, true);
   }
 
-  function runLocalTestMatch() {
-    setTestMode(true);
-    const formatted = displayPlate(TEST_PLATE);
-    const check = {
-      plate: TEST_PLATE,
-      checkedAt: new Date().toISOString(),
-      alert: localTestAlert(),
-    };
-    setPlate(formatted);
-    setError(null);
-    setResult(check);
-    addHistory(check);
-    setMatchedAlert(check.alert);
-    navigator.vibrate?.([180, 80, 180]);
-  }
-
   function openReport(alert: VehicleAlert) {
     setReportAlert(alert);
     setReportReason("");
@@ -871,7 +832,7 @@ function App() {
 
   async function submitReport() {
     const reason = reportReason.replace(/\s+/g, " ").trim();
-    if (!reportAlert || reason.length < 10 || reporting || reportAlert.id === "local-test-alert") return;
+    if (!reportAlert || reason.length < 10 || reporting) return;
     setReporting(true);
     setReportMessage("");
     try {
@@ -1040,23 +1001,6 @@ function App() {
               </div>
               {!valid && plate.length > 0 && <small>Brug formatet AB 12 345</small>}
             </div>
-            <div className={`test-mode-card ${testMode ? "active" : ""}`}>
-              <div>
-                <FlaskConical />
-                <span>
-                  <strong>Testtilstand</strong>
-                  <small>Test med TT 00 000 uden database, lokation eller push.</small>
-                </span>
-              </div>
-              <div>
-                <button type="button" onClick={() => setTestMode((current) => !current)}>
-                  {testMode ? "Slå fra" : "Slå til"}
-                </button>
-                <button type="button" className="test-run" onClick={runLocalTestMatch}>
-                  Kør testmatch
-                </button>
-              </div>
-            </div>
           </div>
           <ResultPanel
             result={result}
@@ -1208,13 +1152,12 @@ function App() {
               </time>
             </div>
             <button onClick={() => setMatchedAlert(null)}>FORSTÅET</button>
-            {matchedAlert.id !== "local-test-alert" &&
-              <button className="match-report" onClick={() => {
-                openReport(matchedAlert);
-                setMatchedAlert(null);
-              }}>
-                <Flag /> Rapportér forkert advarsel
-              </button>}
+            <button className="match-report" onClick={() => {
+              openReport(matchedAlert);
+              setMatchedAlert(null);
+            }}>
+              <Flag /> Rapportér forkert advarsel
+            </button>
             <small>
               Observationen er indsendt af en bruger og er ikke verificeret registerinformation.
             </small>
@@ -1456,10 +1399,9 @@ function ResultPanel({
               </Fact>
             </dl>
             <small>Observationen er indsendt af en bruger og er ikke verificeret registerinformation.</small>
-            {result.alert.id !== "local-test-alert" &&
-              <button className="result-report-button" onClick={() => onReport(result.alert!)}>
-                <Flag /> Rapportér forkert advarsel
-              </button>}
+            <button className="result-report-button" onClick={() => onReport(result.alert!)}>
+              <Flag /> Rapportér forkert advarsel
+            </button>
           </section>
         : <section className="registry-clear">
             <ShieldCheck />

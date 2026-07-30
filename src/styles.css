@@ -114,12 +114,6 @@ button.low-light-hint{font-family:inherit;cursor:pointer;animation:torch-pulse 1
 @keyframes focus-pop{0%{opacity:0;scale:1.4}20%{opacity:1;scale:1}80%{opacity:1}100%{opacity:0;scale:.86}}
 .camera-zoom{height:41px;padding:0 15px;border-top:1px solid var(--line);display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:9px;color:#b9cad4;font-size:11px;background:#091a28}
 .camera-zoom>svg{width:17px;color:var(--cyan)}.camera-zoom input{width:100%;accent-color:var(--cyan)}
-.test-mode-card{margin:0 16px 16px;padding:11px 12px;border:1px solid #314b5c;border-radius:7px;background:#081927;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.test-mode-card.active{border-color:#a875d4;background:rgba(168,117,212,.07)}
-.test-mode-card>div{display:flex;align-items:center;gap:9px}.test-mode-card>div:first-child>svg{width:20px;color:#a875d4;flex:0 0 auto}
-.test-mode-card span{display:flex;flex-direction:column}.test-mode-card strong{font-size:11px}.test-mode-card small{color:var(--muted);font-size:9px;line-height:1.35}
-.test-mode-card button{height:33px;border:1px solid #4d6170;border-radius:5px;background:transparent;color:#d8e6ee;padding:0 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap}
-.test-mode-card .test-run{border-color:#a875d4;color:#e4c4ff}
 .result-report-button{margin-top:13px;border:1px solid #52697a;border-radius:6px;background:transparent;color:#c8d7df;min-height:38px;padding:0 12px;display:flex;align-items:center;gap:7px;cursor:pointer;font-size:11px}.result-report-button svg{width:15px}
 .recent-head>div{display:flex;flex-direction:column;gap:2px}.recent-head>button{border:0;background:transparent;color:#ff938b;display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer}.recent-head>button svg,.history-delete svg{width:15px}
 .history-delete{width:31px;height:31px;border:1px solid #3b5262;border-radius:5px;background:transparent;color:#93a8b6;display:grid;place-items:center;cursor:pointer}.history-delete:hover{color:var(--red);border-color:var(--red)}
@@ -134,7 +128,6 @@ button.low-light-hint{font-family:inherit;cursor:pointer;animation:torch-pulse 1
 
 @media(max-width:680px){
   .camera-zoom{height:43px}
-  .test-mode-card{align-items:flex-start;flex-direction:column}.test-mode-card>div:last-child{width:100%}.test-mode-card button{flex:1}
   .recent-head>button{margin-top:5px}
   .plate-confirm-dialog,.report-dialog{padding:23px 17px}.plate-confirm-dialog>input{font-size:24px}
 }
