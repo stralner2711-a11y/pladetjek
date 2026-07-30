@@ -1,16 +1,16 @@
 {
-  "activeVersion": "1.8.0",
-  "activeVersionCode": 11,
+  "activeVersion": "1.8.1",
+  "activeVersionCode": 12,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.8.0/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.8.0",
-  "sha256": "4743b2fa267e616a100d83ce89bc8d73ba8870e64db3a7a0d4545498058bcdd6",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.8.1/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.8.1",
+  "sha256": "418329bcff44bc633421357ea138bd6a38d0581ddad61bd917483baddbf4a70a",
   "changelog": [
-    "Scanner og manuelt opslag bruger nu Pladetjeks fælles brugerregister",
-    "Nummerplade.dk, DMR og Bilbogen er fjernet fra opslaget",
-    "Manuelt registertjek sender ikke nærhedsnotifikationer",
-    "Et præcist kameramatch kan fortsat advare brugere inden for 5 km",
-    "Resultatvisning og historik er gjort tydeligere"
+    "Kamerabilledet lysnes og kontrastforbedres automatisk i mørke",
+    "En lygteknap vises på telefoner med understøttet kameralygte",
+    "Appen anbefaler lygten, når nummerpladerammen er for mørk",
+    "Kameraet bruger højere opløsning og kontinuerlig fokus",
+    "Billeder kontrolleres hurtigere under scanning"
   ],
   "forceUpdate": false,
   "updatedAt": "2026-07-30"
