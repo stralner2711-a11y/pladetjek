@@ -1,16 +1,17 @@
 {
-  "activeVersion": "1.10.1",
-  "activeVersionCode": 15,
+  "activeVersion": "1.11.0",
+  "activeVersionCode": 16,
   "minimumSupportedVersionCode": 1,
-  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.10.1/Pladetjek.apk",
-  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.10.1",
-  "sha256": "8c35f29e9cc8ef99bfc2b8861c7395716c2e8aec0ae1d22e47c122c25cd49be6",
+  "apkDownloadUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/download/v1.11.0/Pladetjek.apk",
+  "releasePageUrl": "https://github.com/stralner2711-a11y/pladetjek/releases/tag/v1.11.0",
+  "sha256": "97370aa081c3bbc9805b917f591baf3fe0e9c8e4a936d80f747bfcfd59aecddd",
   "changelog": [
-    "Testtilstanden er fjernet fra scannerens brugerflade",
-    "Lokale testmatch kan ikke længere aktiveres",
-    "Tidligere lokale testposter fjernes automatisk fra historikken",
-    "Alle nummerplader kontrolleres nu mod det fælles brugerregister"
+    "Opret bruger bevarer nu den anonyme kontos historik",
+    "Advarsler og rapporter kræver en bekræftet konto, mens scanning fortsat virker anonymt",
+    "Gamle præcise positionsdata ryddes automatisk",
+    "Android-backup af private appdata er deaktiveret",
+    "Nummerplader valideres før lokale notifikationer"
   ],
   "forceUpdate": false,
-  "updatedAt": "2026-07-31"
+  "updatedAt": "2026-08-01"
 }
