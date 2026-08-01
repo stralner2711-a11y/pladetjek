@@ -240,7 +240,11 @@ export function AccountScreen({
               <Mail />
               <div>
                 <h2>{mode === "signup" ? "Opret din private konto" : "Log ind på din konto"}</h2>
-                <p>Ingen adgangskode. Du modtager et sikkert engangslink på e-mail.</p>
+                <p>
+                  {mode === "signup"
+                    ? "Din nuværende anonyme konto og historik bevares. Du bekræfter den med et sikkert engangslink."
+                    : "Ingen adgangskode. Du modtager et sikkert engangslink til din eksisterende konto."}
+                </p>
               </div>
             </div>
             <label htmlFor="account-email">E-mail</label>
@@ -262,12 +266,19 @@ export function AccountScreen({
               onClick={() => void requestLink()}
             >
               {working ? <span className="spinner" /> : <Mail />}
-              {working ? "Sender…" : "Send sikkert loginlink"}
+              {working
+                ? "Sender…"
+                : mode === "signup"
+                  ? "Send bekræftelseslink"
+                  : "Send sikkert loginlink"}
             </button>
             {linkSent &&
               <div className="link-sent" role="status">
                 <CheckCircle2 />
-                <div><strong>Link sendt</strong><p>Åbn linket i din e-mail for at vende tilbage til Pladetjek.</p></div>
+                <div>
+                  <strong>{mode === "signup" ? "Bekræftelseslink sendt" : "Loginlink sendt"}</strong>
+                  <p>Åbn linket i din e-mail for at vende tilbage til Pladetjek.</p>
+                </div>
               </div>}
             <div className="admin-visibility-note">
               <ShieldCheck />

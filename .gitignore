@@ -8,6 +8,7 @@ dist/
 .env.*
 !.env.example
 data/
+backups/
 android/.gradle/
 android/build/
 android/app/build/

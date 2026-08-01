@@ -31,12 +31,15 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.OptIn;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.rtsp.RtspMediaSource;
@@ -163,6 +166,11 @@ public class DashcamStreamPlugin extends Plugin {
 
     @PermissionCallback
     private void wifiPermissionCallback(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            call.reject("Automatisk dashcam-Wi-Fi kræver Android 10 eller nyere.");
+            return;
+        }
+
         String alias = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
             ? NEARBY_WIFI_PERMISSION
             : LOCATION_PERMISSION;
@@ -173,6 +181,7 @@ public class DashcamStreamPlugin extends Plugin {
         connectWifiInternal(call);
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private void connectWifiInternal(PluginCall call) {
         String wifiPassword = call.getString("password", "");
         releaseDashcamNetwork();
@@ -327,7 +336,8 @@ public class DashcamStreamPlugin extends Plugin {
 
     @PluginMethod
     public void notifyEvent(PluginCall call) {
-        String plate = call.getString("plate", "").trim();
+        String plate = PlateFormat.normalize(call.getString("plate", ""));
+        if (!PlateFormat.isDanishRegistration(plate)) plate = "";
         String title = call.getString(
             "title",
             "OBS · nummerplade registreret"
@@ -415,7 +425,11 @@ public class DashcamStreamPlugin extends Plugin {
     @PluginMethod
     public void openWifiSettings(PluginCall call) {
         try {
-            Intent intent = new Intent(Settings.Panel.ACTION_WIFI);
+            Intent intent = new Intent(
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                    ? Settings.Panel.ACTION_WIFI
+                    : Settings.ACTION_WIFI_SETTINGS
+            );
             getActivity().startActivity(intent);
             call.resolve();
         } catch (Exception error) {
@@ -486,6 +500,7 @@ public class DashcamStreamPlugin extends Plugin {
             .build();
     }
 
+    @OptIn(markerClass = UnstableApi.class)
     private void startMediaPlayer(String streamUrl, String protocol) {
         mainHandler.post(() -> {
             if (!running.get()) return;

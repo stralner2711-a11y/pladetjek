@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseAuthCallback } from "./auth-callback";
+import { getAccountEmailFlow } from "./account-service";
+
+test("opgraderer samme anonyme konto ved oprettelse", () => {
+  assert.equal(getAccountEmailFlow(true, true), "upgrade_anonymous");
+});
+
+test("login forsøger altid at hente en eksisterende konto", () => {
+  assert.equal(getAccountEmailFlow(false, true), "sign_in_existing");
+  assert.equal(getAccountEmailFlow(false, false), "sign_in_existing");
+});
 
 test("læser Supabase-session fra Android-loginlinkets fragment", () => {
   assert.deepEqual(

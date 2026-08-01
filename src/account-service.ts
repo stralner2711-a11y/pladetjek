@@ -147,6 +147,17 @@ export function accountsAreConfigured() {
   return supabaseIsConfigured();
 }
 
+export type AccountEmailFlow = "upgrade_anonymous" | "sign_in_existing";
+
+export function getAccountEmailFlow(
+  createAccount: boolean,
+  isAnonymous: boolean,
+): AccountEmailFlow {
+  return createAccount && isAnonymous
+    ? "upgrade_anonymous"
+    : "sign_in_existing";
+}
+
 export async function getMyProfile(): Promise<MyProfile> {
   const client = await requireAuthenticatedClient();
   const { data, error } = await client.rpc("get_my_profile");
@@ -173,16 +184,37 @@ export async function saveMyProfile(
 
 export async function sendMagicLink(email: string, createAccount: boolean) {
   const client = await requireAuthenticatedClient();
+  const normalizedEmail = email.trim().toLowerCase();
   const redirectTo = Capacitor.isNativePlatform()
     ? NATIVE_LOGIN_REDIRECT
     : `${window.location.origin}${window.location.pathname}`;
-  const { error } = await client.auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
-    options: {
-      emailRedirectTo: redirectTo,
-      shouldCreateUser: createAccount,
-    },
-  });
+
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData.user) {
+    throw new Error(readableAccountError(userError?.message ?? "AUTH_REQUIRED"));
+  }
+
+  const flow = getAccountEmailFlow(
+    createAccount,
+    Boolean(userData.user.is_anonymous),
+  );
+
+  if (createAccount && flow !== "upgrade_anonymous") {
+    throw new Error("Du er allerede logget ind på en permanent konto.");
+  }
+
+  const { error } = flow === "upgrade_anonymous"
+    ? await client.auth.updateUser(
+      { email: normalizedEmail },
+      { emailRedirectTo: redirectTo },
+    )
+    : await client.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo: redirectTo,
+        shouldCreateUser: false,
+      },
+    });
   if (error) throw new Error(readableAccountError(error.message));
 }
 

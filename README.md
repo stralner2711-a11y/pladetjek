@@ -106,14 +106,17 @@ opdateringer og de vigtige regler om versionskode og signeringsnøgle.
   udløb. Den lokale JSON-backend bruges kun som udviklingsfallback.
 - Klienterne kan ikke hente eller gennemse hele nummerpladeregisteret.
 - Et matchopslag returnerer højst én aktiv advarsel for den præcise nummerplade.
-- Hver installation får automatisk sin egen anonyme Supabase-session.
-- En permanent konto bruger et sikkert e-mail-link uden adgangskode.
+- Hver installation får automatisk sin egen anonyme Supabase-session til
+  scanning. Vedvarende indberetninger kræver en e-mailbekræftet konto.
+- "Opret bruger" opgraderer samme anonyme konto, så brugerens historik bevares.
+  En permanent konto bruger et sikkert e-mail-link uden adgangskode.
 - Andre brugere ser kun det valgte brugernavn eller `Anonym bruger`.
 - E-mail, internt bruger-id, roller og moderation udleveres kun via beskyttede
   creator/admin-funktioner.
 - Nærhedsadvarsler kræver aktivt samtykke. Den seneste præcise position bruges
-  kun privat i radiusberegningen, accepteres højst 30 minutter og slettes ved
-  fravalg; modtageren ser kun afrundede positionsdata.
+  kun privat i radiusberegningen, accepteres højst 30 minutter og fjernes
+  fysisk af en intern oprydning; modtageren ser kun afrundede positionsdata.
+- Android-backup og enhedsoverførsel af appens private data er deaktiveret.
 - Beskrivelsen må højst være 240 tegn og bør ikke indeholde navne eller andre
   personoplysninger.
 - En dokumenteret slettepolitik bør tilføjes, før løsningen åbnes for en større
@@ -137,6 +140,10 @@ desuden denne tilladte redirect-URL under Supabase Authentication:
 ```text
 dk.pladetjek.app://login-callback
 ```
+
+Under Authentication skal `Allow manual linking` også være aktiveret. Det gør,
+at en anonym installation kan bekræftes som permanent konto uden at miste sit
+bruger-id og sin eksisterende historik.
 
 Supabases indbyggede e-mailtjeneste er egnet til begrænset test. Før mange
 brugere inviteres, bør projektet forbindes til en egen SMTP-udbyder.
